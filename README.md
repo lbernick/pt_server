@@ -30,6 +30,11 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+4. Create a `.env` file in the project root:
+```bash
+ANTHROPIC_API_KEY=your_api_key_here
+```
+
 ## Running the Server
 
 Start the development server:
@@ -53,6 +58,9 @@ Returns a welcome message.
 
 ### GET /health
 Health check endpoint.
+
+### POST /api/v1/chat
+Chat with AI
 
 ## Code Formatting
 
