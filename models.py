@@ -8,6 +8,7 @@ class Equipment(BaseModel):
 
 
 class Exercise(BaseModel):
+    # TODO: Exercises should be identifiable by ID rather than name
     name: str
     # TODO: How to represent exercises that can be done with different types of equipment?
     # e.g. a goblet squat can be done with a dumbbell or kettlebell

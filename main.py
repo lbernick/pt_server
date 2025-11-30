@@ -3,7 +3,7 @@ import os
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from models import Workout
@@ -12,7 +12,11 @@ from models import Workout
 load_dotenv()
 
 app = FastAPI(title="PT Server", version="1.0.0")
-client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+
+def get_anthropic_client() -> Anthropic:
+    """Dependency function that returns the Anthropic client."""
+    return Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 
 @app.get("/")
@@ -36,7 +40,9 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/v1/chat")
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest, client: Anthropic = Depends(get_anthropic_client)
+):
     try:
         # Convert to format Anthropic expects
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -71,7 +77,9 @@ CRITICAL: Return ONLY valid JSON matching this schema. No markdown, no explanati
 
 
 @app.post("/generate-workout", response_model=Workout)
-async def generate_workout(request: WorkoutRequest):
+async def generate_workout(
+    request: WorkoutRequest, client: Anthropic = Depends(get_anthropic_client)
+):
     user_prompt = f"Generate a workout based on: {request.prompt}"
     if request.difficulty:
         user_prompt += f"\nDifficulty: {request.difficulty}"
