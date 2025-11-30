@@ -42,7 +42,8 @@ Start the development server:
 uvicorn main:app --reload
 ```
 
-The server will start at `http://localhost:8000`
+The server will start at `http://localhost:8000`. The `--reload` option enables auto-reload on code changes.
+If you want to connect to the server from your phone (e.g. using the Expo Go app), you must run the server with `--host 0.0.0.0`.
 
 ## API Documentation
 
@@ -100,11 +101,4 @@ pytest -v
 Run tests with coverage:
 ```bash
 pytest --cov=. --cov-report=term-missing
-```
-
-## Development
-
-To run with auto-reload on code changes:
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```

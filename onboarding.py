@@ -34,8 +34,7 @@ Your goal is to gather enough information to create a personalized 12-week worko
    - What's worked or not worked in the past
 
 3. LOGISTICAL CONSTRAINTS
-   - Days per week available
-   - Time per session
+   - Number of days per week available
    - Equipment access (gym, home gym, bodyweight only)
    - Schedule constraints (morning/evening, etc.)
    - Any injuries or limitations
@@ -53,14 +52,13 @@ You must respond with JSON in this exact format:
   "message": "Your response to the user",
   "is_complete": false,  // Set to true only when you have ALL necessary information
   "state": {
-    "fitness_goals": ["list", "of", "goals"],  // null if not yet known
-    "experience_level": "beginner|intermediate|advanced",  // null if not yet known
+    "fitness_goals": ["list", "of", "goals", "in", "priority", "order"],  // null if not yet known
+    "experience_level": "description of current fitness and experience level",  // null if not yet known
     "current_routine": "description of current routine",  // null if not yet known
     "days_per_week": 4,  // null if not yet known
-    "session_duration_minutes": 60,  // null if not yet known
     "equipment_available": ["list", "of", "equipment"],  // null if not yet known
     "injuries_limitations": ["list"],  // null or empty list
-    "preferences": {}  // any other relevant info
+    "preferences": "description of preferences"
   }
 }
 
@@ -134,29 +132,25 @@ CRITICAL:
 router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 
 
-@router.post("/start")
-async def start_onboarding(client: Anthropic = Depends(get_client)):
-    """Start the onboarding conversation"""
-    agent = OnboardingAgent(client)
-    response = agent.start_conversation()
-
-    return {
-        "conversation_id": "conv_123",  # Generate real ID in production
-        "response": response,
-    }
-
-
 @router.post("/message")
 async def onboarding_message(
     request: OnboardingRequest, client: Anthropic = Depends(get_client)
 ):
-    """Continue the onboarding conversation"""
+    """Handle onboarding conversation (both start and continuation)
+
+    If conversation_history is empty and latest_message is empty, starts a new conversation.
+    Otherwise, continues an existing conversation.
+    """
     agent = OnboardingAgent(client)
 
-    response = agent.process_message(
-        conversation_history=request.conversation_history,
-        latest_message=request.latest_message,
-    )
+    # If empty history and no message, this is a start
+    if not request.conversation_history and not request.latest_message:
+        response = agent.start_conversation()
+    else:
+        response = agent.process_message(
+            conversation_history=request.conversation_history,
+            latest_message=request.latest_message,
+        )
 
     # If complete, optionally trigger plan generation
     if response.is_complete:
