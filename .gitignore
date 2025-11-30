@@ -1,5 +1,6 @@
 __pycache__
 .claude
 .ruff_cache
+.pytest_cache
 .venv
 .env
