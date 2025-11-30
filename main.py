@@ -40,9 +40,7 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/v1/chat")
-async def chat(
-    request: ChatRequest, client: Anthropic = Depends(get_anthropic_client)
-):
+async def chat(request: ChatRequest, client: Anthropic = Depends(get_anthropic_client)):
     try:
         # Convert to format Anthropic expects
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -76,7 +74,7 @@ The JSON must match this exact schema:
 CRITICAL: Return ONLY valid JSON matching this schema. No markdown, no explanation, no code blocks."""
 
 
-@app.post("/generate-workout", response_model=Workout)
+@app.post("/api/v1/generate-workout", response_model=Workout)
 async def generate_workout(
     request: WorkoutRequest, client: Anthropic = Depends(get_anthropic_client)
 ):
