@@ -16,7 +16,7 @@ class Exercise(BaseModel):
 
 
 class Set(BaseModel):
-    reps: int
+    reps: int  # TODO: AMRAP
     weight: float | None = None
     # TODO: Weight units?
     duration_seconds: int | None = None
@@ -31,6 +31,22 @@ class WorkoutExercise(BaseModel):
 class Workout(BaseModel):
     # TODO: Notes, focus, estimated duration
     exercises: List[WorkoutExercise]
+
+
+class Template(BaseModel):
+    name: str
+    description: str | None = None
+    exercises: List[str]
+
+
+# TODO: Ideally a training plan would be more flexible than this
+# (e.g. biweekly repetition, training blocks, deload weeks, multiple workouts per day, etc)
+class TrainingPlan(BaseModel):
+    description: str
+    templates: List[Template]
+    microcycle: List[
+        int
+    ]  # The index of the template to use on each day of the microcycle, or None for no workout
 
 
 class OnboardingMessage(BaseModel):

@@ -1,9 +1,9 @@
-import json
 from typing import List
 
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends
 
+from ai_utils import call_ai_agent
 from typedefs import OnboardingRequest, OnboardingResponse, OnboardingState
 
 
@@ -75,26 +75,16 @@ CRITICAL:
         # Add latest message to history
         messages = conversation_history + [{"role": "user", "content": latest_message}]
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2048,
-            system=self.get_system_prompt(),
-            messages=messages,
-        )
-
-        response_text = response.content[0].text.strip()
-
-        # Clean response
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
         try:
-            data = json.loads(response_text)
-            return OnboardingResponse(**data)
-        except Exception as e:
+            return call_ai_agent(
+                client=self.client,
+                system_prompt=self.get_system_prompt(),
+                messages=messages,
+                response_model=OnboardingResponse,
+                max_tokens=2048,
+                error_prefix="Onboarding",
+            )
+        except Exception:
             # Fallback if parsing fails
             return OnboardingResponse(
                 message="I'm having trouble processing that. Could you tell me a bit about your fitness goals?",
@@ -104,28 +94,19 @@ CRITICAL:
 
     def start_conversation(self) -> OnboardingResponse:
         """Generate the opening message"""
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2048,
-            system=self.get_system_prompt(),
+        return call_ai_agent(
+            client=self.client,
+            system_prompt=self.get_system_prompt(),
             messages=[
                 {
                     "role": "user",
                     "content": "Start the onboarding conversation. Greet the user and ask your first question.",
                 }
             ],
+            response_model=OnboardingResponse,
+            max_tokens=2048,
+            error_prefix="Onboarding",
         )
-
-        response_text = response.content[0].text.strip()
-
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        data = json.loads(response_text)
-        return OnboardingResponse(**data)
 
 
 # Create router for onboarding endpoints

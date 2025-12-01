@@ -79,6 +79,41 @@ Health check endpoint.
 ### POST /api/v1/chat
 Chat with AI
 
+### POST /api/v1/generate-training-plan
+Generate a personalized weekly training plan based on user's fitness profile.
+
+**Example CURL command:**
+```bash
+curl -X POST http://localhost:8000/api/v1/generate-training-plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fitness_goals": ["build strength", "muscle gain"],
+    "experience_level": "intermediate",
+    "current_routine": "3 day push/pull/legs split",
+    "days_per_week": 4,
+    "equipment_available": ["barbell", "dumbbells", "squat rack", "bench"],
+    "injuries_limitations": [],
+    "preferences": "prefer compound movements"
+  }'
+```
+
+**Response format:**
+```json
+{
+  "description": "4-day upper/lower strength training split",
+  "templates": [
+    {
+      "name": "Upper Body Strength",
+      "description": "Focus on compound pressing and pulling",
+      "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
+    }
+  ],
+  "microcycle": [0, 1, -1, 0, 1, -1, -1]
+}
+```
+
+Note: The `microcycle` array represents which template to use each day (Monday=index 0), where `-1` indicates a rest day.
+
 ## Code Formatting
 
 This project uses [Ruff](https://docs.astral.sh/ruff/) for code formatting and linting.
