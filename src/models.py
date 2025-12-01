@@ -1,63 +1,27 @@
-import datetime
-from typing import List, Literal, Optional
+"""SQLAlchemy database models."""
 
-from pydantic import BaseModel
+import uuid
+from datetime import UTC, datetime
 
+from sqlalchemy import Column, Date, DateTime
+from sqlalchemy.dialects.postgresql import UUID
 
-class Equipment(BaseModel):
-    name: str
-
-
-class Exercise(BaseModel):
-    # TODO: Exercises should be identifiable by ID rather than name
-    name: str
-    # TODO: How to represent exercises that can be done with different types of equipment?
-    # e.g. a goblet squat can be done with a dumbbell or kettlebell
-    equipment: Equipment
+from database import Base
 
 
-class Set(BaseModel):
-    reps: int
-    weight: float | None = None
-    # TODO: Weight units?
-    duration_seconds: int | None = None
-    rest_seconds: int | None = None
+class WorkoutDB(Base):
+    """Database model for workouts."""
 
+    __tablename__ = "workouts"
 
-class WorkoutExercise(BaseModel):
-    exercise: Exercise
-    sets: List[Set]
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    date = Column(Date, nullable=False)
+    start_time = Column(DateTime, nullable=True)
+    end_time = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
+    )
 
-
-class Workout(BaseModel):
-    # TODO: Notes, focus, estimated duration
-    exercises: List[WorkoutExercise]
-    date: datetime.date
-    start_time: Optional[datetime.datetime]
-    end_time: Optional[datetime.datetime]
-
-
-class OnboardingMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str
-
-
-class OnboardingState(BaseModel):
-    fitness_goals: List[str] | None = None
-    experience_level: str | None = None
-    current_routine: str | None = None
-    days_per_week: int | None = None
-    equipment_available: List[str] | None = None
-    injuries_limitations: List[str] | None = None
-    preferences: str | None = None
-
-
-class OnboardingResponse(BaseModel):
-    message: str  # AI's next question or statement
-    is_complete: bool  # True when ready to generate plan
-    state: OnboardingState  # Current understanding
-
-
-class OnboardingRequest(BaseModel):
-    conversation_history: List[OnboardingMessage] = []
-    latest_message: str = ""
+    def __repr__(self):
+        return f"<WorkoutDB(id={self.id}, date={self.date})>"

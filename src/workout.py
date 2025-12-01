@@ -4,7 +4,7 @@ from anthropic import Anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from models import Workout
+from typedefs import Workout
 
 router = APIRouter(prefix="/api/v1", tags=["workout"])
 

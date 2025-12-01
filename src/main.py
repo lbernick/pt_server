@@ -2,13 +2,25 @@ import os
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = FastAPI(title="PT Server", version="1.0.0")
+
+
+@app.middleware("http")
+async def log_internal_errors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except HTTPException as e:
+        if e.status_code == 500:
+            print(
+                f"Unhandled exception during request: {request.method} {request.url}. Error: {e.detail}"
+            )
+        raise
 
 
 def get_anthropic_client() -> Anthropic:
@@ -25,6 +37,7 @@ from onboarding import get_client as onboarding_get_client
 from onboarding import router as onboarding_router
 from workout import get_client as workout_get_client
 from workout import router as workout_router
+from workouts_api import router as workouts_api_router
 
 # Override the placeholder dependencies in routers with our real client
 app.dependency_overrides[onboarding_get_client] = get_anthropic_client
@@ -33,6 +46,7 @@ app.dependency_overrides[workout_get_client] = get_anthropic_client
 # Include routers
 app.include_router(onboarding_router)
 app.include_router(workout_router)
+app.include_router(workouts_api_router)
 
 
 @app.get("/")

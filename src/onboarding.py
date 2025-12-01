@@ -4,7 +4,7 @@ from typing import List
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends
 
-from models import OnboardingRequest, OnboardingResponse, OnboardingState
+from typedefs import OnboardingRequest, OnboardingResponse, OnboardingState
 
 
 # Placeholder dependency that will be overridden by main.py
