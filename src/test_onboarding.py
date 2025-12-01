@@ -210,19 +210,3 @@ def test_onboarding_message_with_history_but_no_message(mock_anthropic_client_st
 
     # Should call start_conversation since both are empty
     mock_anthropic_client_start.messages.create.assert_called_once()
-
-
-def test_onboarding_complete_endpoint():
-    """Test the complete onboarding endpoint (placeholder)"""
-    state_data = {
-        "fitness_goals": ["build strength"],
-        "experience_level": "intermediate",
-        "current_routine": "3 day split",
-        "days_per_week": 4,
-        "equipment_available": ["barbell", "dumbbells"],
-        "injuries_limitations": [],
-        "preferences": None,
-    }
-
-    response = client.post("/api/v1/onboarding/complete", json=state_data)
-    assert response.status_code == 200

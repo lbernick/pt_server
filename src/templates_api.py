@@ -37,8 +37,6 @@ def get_template(template_id: UUID, db: Session = Depends(get_db)) -> TemplateRe
         name=template.name,
         description=template.description,
         exercises=template.exercises,
-        created_at=template.created_at,
-        updated_at=template.updated_at,
     )
 
 
@@ -64,8 +62,6 @@ def list_templates(
             name=template.name,
             description=template.description,
             exercises=template.exercises,
-            created_at=template.created_at,
-            updated_at=template.updated_at,
         )
         for template in templates
     ]

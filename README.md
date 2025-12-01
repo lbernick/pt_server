@@ -134,9 +134,7 @@ curl "http://localhost:8000/api/v1/templates?skip=0&limit=10"
     "id": "uuid-123",
     "name": "Upper Body Strength",
     "description": "Focus on compound pressing and pulling",
-    "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"],
-    "created_at": "2025-12-01T...",
-    "updated_at": "2025-12-01T..."
+    "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
   }
 ]
 ```
@@ -155,9 +153,7 @@ curl http://localhost:8000/api/v1/templates/uuid-123
   "id": "uuid-123",
   "name": "Upper Body Strength",
   "description": "Focus on compound pressing and pulling",
-  "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"],
-  "created_at": "2025-12-01T...",
-  "updated_at": "2025-12-01T..."
+  "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
 }
 ```
 

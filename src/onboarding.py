@@ -133,15 +133,4 @@ async def onboarding_message(
             latest_message=request.latest_message,
         )
 
-    # If complete, optionally trigger plan generation
-    if response.is_complete:
-        # Could start plan generation in background here
-        pass
-
     return response
-
-
-@router.post("/complete")
-async def complete_onboarding(state: OnboardingState):
-    """Called when onboarding is complete to generate the plan"""
-    pass

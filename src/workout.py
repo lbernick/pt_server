@@ -230,8 +230,6 @@ def convert_db_to_response(db_plan: TrainingPlanDB) -> TrainingPlanResponse:
                     name=schedule_item.template.name,
                     description=schedule_item.template.description,
                     exercises=schedule_item.template.exercises,
-                    created_at=schedule_item.template.created_at,
-                    updated_at=schedule_item.template.updated_at,
                 )
             )
 

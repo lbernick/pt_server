@@ -469,7 +469,7 @@ def test_convert_db_to_response(db_session):
     assert response.templates[1].exercises == ["Deadlift", "Pull-ups"]
     assert response.templates[1].id is not None
 
-    # Verify timestamps
+    # Verify plan timestamps (but not template timestamps)
     assert response.created_at is not None
     assert response.updated_at is not None
 

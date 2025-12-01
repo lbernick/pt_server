@@ -80,8 +80,6 @@ def test_get_template(test_client_with_db, sample_template):
     assert data["name"] == "Upper Body Strength"
     assert data["description"] == "Focus on compound pressing and pulling"
     assert data["exercises"] == ["Bench Press", "Barbell Rows", "Overhead Press"]
-    assert "created_at" in data
-    assert "updated_at" in data
 
 
 def test_get_template_not_found(test_client_with_db):
@@ -115,8 +113,6 @@ def test_list_templates(test_client_with_db, multiple_templates):
     assert "name" in first_template
     assert "description" in first_template
     assert "exercises" in first_template
-    assert "created_at" in first_template
-    assert "updated_at" in first_template
     assert isinstance(first_template["exercises"], list)
 
 
