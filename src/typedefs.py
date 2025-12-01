@@ -1,4 +1,6 @@
+from datetime import datetime
 from typing import List, Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -73,3 +75,32 @@ class OnboardingResponse(BaseModel):
 class OnboardingRequest(BaseModel):
     conversation_history: List[OnboardingMessage] = []
     latest_message: str = ""
+
+
+# Response models with DB IDs (for API responses)
+class TemplateResponse(BaseModel):
+    """Template response model with database ID."""
+
+    id: UUID
+    name: str
+    description: str | None = None
+    exercises: List[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TrainingPlanResponse(BaseModel):
+    """Training plan response model with database ID and microcycle format."""
+
+    id: UUID
+    description: str
+    templates: List[TemplateResponse]
+    microcycle: List[int]  # Array of template indices (-1 for rest days)
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

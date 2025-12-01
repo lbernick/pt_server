@@ -28,8 +28,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import models for autogenerate support
+import sys
+from pathlib import Path
+
+# Add src directory to path so we can import models
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 from database import Base
-from models_db import WorkoutDB
+from models import WorkoutDB, TemplateDB, TrainingPlanDB, ScheduleItemDB
 
 target_metadata = Base.metadata
 

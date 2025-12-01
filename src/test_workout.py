@@ -5,7 +5,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
-from workout import get_client
+from models import TemplateDB, TrainingPlanDB, ScheduleItemDB
+from typedefs import TrainingPlan, Template
+from workout import (
+    build_training_plan_prompt,
+    convert_db_to_response,
+    generate_plan_with_ai,
+    get_client,
+    save_training_plan_to_db,
+)
 
 client = TestClient(app)
 
@@ -325,3 +333,174 @@ def test_generate_training_plan_with_injuries(mock_anthropic_client_training_pla
     user_message = call_args[1]["messages"][0]["content"]
     assert "lower back pain" in user_message
     assert "shoulder impingement" in user_message
+
+
+# Unit tests for helper functions
+
+
+def test_build_training_plan_prompt():
+    """Test building prompt from onboarding state"""
+    from typedefs import OnboardingState
+
+    state = OnboardingState(
+        fitness_goals=["build strength"],
+        experience_level="intermediate",
+        days_per_week=4,
+        equipment_available=["barbell", "dumbbells"],
+        injuries_limitations=["knee pain"],
+        preferences="compound movements",
+    )
+
+    prompt = build_training_plan_prompt(state)
+
+    assert "build strength" in prompt
+    assert "intermediate" in prompt
+    assert "4" in prompt
+    assert "barbell" in prompt
+    assert "knee pain" in prompt
+    assert "compound movements" in prompt
+
+
+# Database integration tests
+
+
+def test_save_training_plan_to_db(db_session):
+    """Test saving a training plan to the database"""
+    # Create a sample training plan (from AI)
+    plan = TrainingPlan(
+        description="4-day upper/lower split",
+        templates=[
+            Template(
+                name="Upper Body Strength",
+                description="Compound pressing and pulling",
+                exercises=["Bench Press", "Barbell Rows", "Overhead Press"],
+            ),
+            Template(
+                name="Lower Body Power",
+                description="Leg strength",
+                exercises=["Back Squat", "Romanian Deadlift"],
+            ),
+        ],
+        microcycle=[0, 1, -1, 0, 1, -1, -1],  # Mon, Tue, Rest, Thu, Fri, Rest, Rest
+    )
+
+    # Save to database
+    db_plan = save_training_plan_to_db(db_session, plan)
+
+    # Verify TrainingPlan was saved
+    assert db_plan.id is not None
+    assert db_plan.description == "4-day upper/lower split"
+    assert db_plan.created_at is not None
+
+    # Verify Templates were saved
+    templates_in_db = (
+        db_session.query(TemplateDB)
+        .filter_by(id=db_plan.schedule_items[0].template_id)
+        .all()
+    )
+    assert len(db_plan.schedule_items) == 7  # 7 days in microcycle
+
+    # Verify ScheduleItems were saved correctly
+    schedule_items = db_plan.schedule_items
+    assert schedule_items[0].day_index == 0
+    assert schedule_items[0].template_id is not None  # Monday - Upper
+    assert schedule_items[1].day_index == 1
+    assert schedule_items[1].template_id is not None  # Tuesday - Lower
+    assert schedule_items[2].day_index == 2
+    assert schedule_items[2].template_id is None  # Wednesday - Rest
+    assert schedule_items[3].day_index == 3
+    assert schedule_items[3].template_id is not None  # Thursday - Upper
+    assert schedule_items[4].day_index == 4
+    assert schedule_items[4].template_id is not None  # Friday - Lower
+    assert schedule_items[5].template_id is None  # Saturday - Rest
+    assert schedule_items[6].template_id is None  # Sunday - Rest
+
+    # Verify template references are correct
+    upper_template = schedule_items[0].template
+    assert upper_template.name == "Upper Body Strength"
+    assert upper_template.exercises == [
+        "Bench Press",
+        "Barbell Rows",
+        "Overhead Press",
+    ]
+
+    lower_template = schedule_items[1].template
+    assert lower_template.name == "Lower Body Power"
+    assert lower_template.exercises == ["Back Squat", "Romanian Deadlift"]
+
+
+def test_convert_db_to_response(db_session):
+    """Test converting database model to API response format"""
+    # Create test data in database
+    plan = TrainingPlan(
+        description="3-day full body",
+        templates=[
+            Template(
+                name="Full Body A",
+                description="Workout A",
+                exercises=["Squat", "Bench Press"],
+            ),
+            Template(
+                name="Full Body B",
+                description="Workout B",
+                exercises=["Deadlift", "Pull-ups"],
+            ),
+        ],
+        microcycle=[0, -1, 1, -1, 0, -1, -1],
+    )
+
+    db_plan = save_training_plan_to_db(db_session, plan)
+
+    # Convert to response format
+    response = convert_db_to_response(db_plan)
+
+    # Verify response structure
+    assert response.id == db_plan.id
+    assert response.description == "3-day full body"
+    assert len(response.templates) == 2
+    assert response.microcycle == [0, -1, 1, -1, 0, -1, -1]
+
+    # Verify templates in response
+    assert response.templates[0].name == "Full Body A"
+    assert response.templates[0].exercises == ["Squat", "Bench Press"]
+    assert response.templates[0].id is not None
+
+    assert response.templates[1].name == "Full Body B"
+    assert response.templates[1].exercises == ["Deadlift", "Pull-ups"]
+    assert response.templates[1].id is not None
+
+    # Verify timestamps
+    assert response.created_at is not None
+    assert response.updated_at is not None
+
+
+def test_training_plan_with_duplicate_templates(db_session):
+    """Test saving a plan where the same template is used multiple days"""
+    plan = TrainingPlan(
+        description="2-day repeated split",
+        templates=[
+            Template(
+                name="Full Body Workout",
+                description="Same workout multiple days",
+                exercises=["Squat", "Bench", "Deadlift"],
+            ),
+        ],
+        microcycle=[0, -1, 0, -1, 0, -1, -1],  # Same workout 3x per week
+    )
+
+    db_plan = save_training_plan_to_db(db_session, plan)
+
+    # Verify only ONE template was created
+    all_templates = db_session.query(TemplateDB).all()
+    plan_template_ids = {
+        item.template_id for item in db_plan.schedule_items if item.template_id
+    }
+    assert len(plan_template_ids) == 1
+
+    # Verify schedule items reference the same template
+    assert (
+        db_plan.schedule_items[0].template_id == db_plan.schedule_items[2].template_id
+    )
+    assert (
+        db_plan.schedule_items[0].template_id == db_plan.schedule_items[4].template_id
+    )

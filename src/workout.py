@@ -3,9 +3,12 @@ import json
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from ai_utils import call_ai_agent
-from typedefs import Workout, OnboardingState, TrainingPlan
+from database import get_db
+from models import TrainingPlanDB
+from typedefs import OnboardingState, TrainingPlan, TrainingPlanResponse, Workout
 
 router = APIRouter(prefix="/api/v1", tags=["workout"])
 
@@ -67,7 +70,7 @@ Generate a training plan in valid JSON format matching this exact schema:
 A Template contains:
 - name: descriptive name for the workout (e.g., "Upper Body Strength", "Lower Body Power")
 - description: brief overview of the workout's focus
-- exercises: list of exercises that will be performed (e.g., "Barbell Squat", "Bench Press")
+- exercises: list of exercises that will be performed (e.g., "Barbell Squat", "Bench Press", "Lunge"). Exercise names should be singular.
 
 A Training plan contains:
 - description: e.g. "3-day push-pull-legs strength training plan", "13-week marathon training plan"
@@ -88,13 +91,15 @@ CRITICAL: Return ONLY valid JSON matching this schema. No markdown, no explanati
 Assign workouts to specific days based on the days_per_week. Leave unassigned days as null."""
 
 
-@router.post("/generate-training-plan", response_model=TrainingPlan)
-async def generate_training_plan(
-    state: OnboardingState, client: Anthropic = Depends(get_client)
-):
-    """Generate a weekly training plan based on onboarding information."""
+def build_training_plan_prompt(state: OnboardingState) -> str:
+    """Build user prompt from onboarding state.
 
-    # Build the user prompt from onboarding state
+    Args:
+        state: OnboardingState with user's fitness profile
+
+    Returns:
+        Formatted prompt string for AI
+    """
     prompt_parts = [
         "Generate a weekly training plan based on the following information:"
     ]
@@ -124,7 +129,20 @@ async def generate_training_plan(
     if state.preferences:
         prompt_parts.append(f"Preferences: {state.preferences}")
 
-    user_prompt = "\n".join(prompt_parts)
+    return "\n".join(prompt_parts)
+
+
+def generate_plan_with_ai(client: Anthropic, state: OnboardingState) -> TrainingPlan:
+    """Generate training plan using AI.
+
+    Args:
+        client: Anthropic client instance
+        state: OnboardingState with user's fitness profile
+
+    Returns:
+        TrainingPlan pydantic model from AI
+    """
+    user_prompt = build_training_plan_prompt(state)
 
     return call_ai_agent(
         client=client,
@@ -134,3 +152,127 @@ async def generate_training_plan(
         max_tokens=4096,
         error_prefix="Training plan generation",
     )
+
+
+def save_training_plan_to_db(db: Session, plan: TrainingPlan) -> TrainingPlanDB:
+    """Save generated training plan to database.
+
+    Args:
+        db: Database session
+        plan: TrainingPlan pydantic model from AI
+
+    Returns:
+        TrainingPlanDB instance with related templates and schedule items
+    """
+    from models import ScheduleItemDB, TemplateDB
+
+    # Create the training plan
+    db_plan = TrainingPlanDB(description=plan.description)
+    db.add(db_plan)
+    db.flush()  # Get the ID without committing
+
+    # Create templates and map them by their index in the templates array
+    template_map = {}  # Maps index -> TemplateDB
+    for idx, template in enumerate(plan.templates):
+        db_template = TemplateDB(
+            name=template.name,
+            description=template.description,
+            exercises=template.exercises,
+        )
+        db.add(db_template)
+        db.flush()  # Get the ID
+        template_map[idx] = db_template
+
+    # Create schedule items for each day in the microcycle
+    for day_index, template_index in enumerate(plan.microcycle):
+        template_id = None if template_index == -1 else template_map[template_index].id
+
+        schedule_item = ScheduleItemDB(
+            training_plan_id=db_plan.id,
+            template_id=template_id,
+            day_index=day_index,
+        )
+        db.add(schedule_item)
+
+    db.commit()
+    db.refresh(db_plan)
+
+    return db_plan
+
+
+def convert_db_to_response(db_plan: TrainingPlanDB) -> TrainingPlanResponse:
+    """Convert database model to API response format.
+
+    Args:
+        db_plan: TrainingPlanDB with loaded relationships
+
+    Returns:
+        TrainingPlanResponse with microcycle array format
+    """
+    from typedefs import TemplateResponse
+
+    # Build a map of template_id -> position in templates array
+    # We need to deduplicate templates and assign them consistent indices
+    unique_templates = {}  # template_id -> (index, TemplateDB)
+    template_list = []  # Ordered list of TemplateResponse
+
+    # First pass: collect unique templates from schedule items
+    for schedule_item in db_plan.schedule_items:
+        if (
+            schedule_item.template_id
+            and schedule_item.template_id not in unique_templates
+        ):
+            idx = len(unique_templates)
+            unique_templates[schedule_item.template_id] = (idx, schedule_item.template)
+            template_list.append(
+                TemplateResponse(
+                    id=schedule_item.template.id,
+                    name=schedule_item.template.name,
+                    description=schedule_item.template.description,
+                    exercises=schedule_item.template.exercises,
+                    created_at=schedule_item.template.created_at,
+                    updated_at=schedule_item.template.updated_at,
+                )
+            )
+
+    # Second pass: build microcycle array using template indices
+    microcycle = []
+    for schedule_item in db_plan.schedule_items:
+        if schedule_item.template_id is None:
+            microcycle.append(-1)  # Rest day
+        else:
+            template_idx, _ = unique_templates[schedule_item.template_id]
+            microcycle.append(template_idx)
+
+    return TrainingPlanResponse(
+        id=db_plan.id,
+        description=db_plan.description,
+        templates=template_list,
+        microcycle=microcycle,
+        created_at=db_plan.created_at,
+        updated_at=db_plan.updated_at,
+    )
+
+
+@router.post("/generate-training-plan", response_model=TrainingPlanResponse)
+async def generate_training_plan(
+    state: OnboardingState,
+    client: Anthropic = Depends(get_client),
+    db: Session = Depends(get_db),
+):
+    """Generate a weekly training plan based on onboarding information.
+
+    This endpoint:
+    1. Validates onboarding state
+    2. Generates a training plan using AI
+    3. Saves the plan to the database
+    4. Returns the plan with database IDs
+    """
+    # Generate plan using AI
+    plan = generate_plan_with_ai(client, state)
+
+    # Save to database
+    db_plan = save_training_plan_to_db(db, plan)
+
+    # Convert to response format and return
+    return convert_db_to_response(db_plan)
