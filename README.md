@@ -39,7 +39,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 
 Start the development server:
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload --app-dir=src
 ```
 
 The server will start at `http://localhost:8000`. The `--reload` option enables auto-reload on code changes.

@@ -1,4 +1,5 @@
-from typing import List, Literal
+import datetime
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -31,6 +32,9 @@ class WorkoutExercise(BaseModel):
 class Workout(BaseModel):
     # TODO: Notes, focus, estimated duration
     exercises: List[WorkoutExercise]
+    date: datetime.date
+    start_time: Optional[datetime.datetime]
+    end_time: Optional[datetime.datetime]
 
 
 class OnboardingMessage(BaseModel):
