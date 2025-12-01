@@ -35,6 +35,7 @@ def get_anthropic_client() -> Anthropic:
 # Import routers after defining get_anthropic_client so they can import it
 from onboarding import get_client as onboarding_get_client
 from onboarding import router as onboarding_router
+from templates_api import router as templates_router
 from workout import get_client as workout_get_client
 from workout import router as workout_router
 from workouts_api import router as workouts_api_router
@@ -47,6 +48,7 @@ app.dependency_overrides[workout_get_client] = get_anthropic_client
 app.include_router(onboarding_router)
 app.include_router(workout_router)
 app.include_router(workouts_api_router)
+app.include_router(templates_router)
 
 
 @app.get("/")

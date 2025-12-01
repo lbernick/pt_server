@@ -114,6 +114,53 @@ curl -X POST http://localhost:8000/api/v1/generate-training-plan \
 
 Note: The `microcycle` array represents which template to use each day (Monday=index 0), where `-1` indicates a rest day.
 
+### GET /api/v1/templates
+List all workout templates with pagination.
+
+**Example CURL command:**
+```bash
+curl http://localhost:8000/api/v1/templates
+```
+
+**With pagination:**
+```bash
+curl "http://localhost:8000/api/v1/templates?skip=0&limit=10"
+```
+
+**Response format:**
+```json
+[
+  {
+    "id": "uuid-123",
+    "name": "Upper Body Strength",
+    "description": "Focus on compound pressing and pulling",
+    "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"],
+    "created_at": "2025-12-01T...",
+    "updated_at": "2025-12-01T..."
+  }
+]
+```
+
+### GET /api/v1/templates/:id
+Get a specific workout template by ID.
+
+**Example CURL command:**
+```bash
+curl http://localhost:8000/api/v1/templates/uuid-123
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "name": "Upper Body Strength",
+  "description": "Focus on compound pressing and pulling",
+  "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"],
+  "created_at": "2025-12-01T...",
+  "updated_at": "2025-12-01T..."
+}
+```
+
 ## Code Formatting
 
 This project uses [Ruff](https://docs.astral.sh/ruff/) for code formatting and linting.
