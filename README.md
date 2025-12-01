@@ -71,7 +71,7 @@ This project uses [Ruff](https://docs.astral.sh/ruff/) for code formatting and l
 
 Use the provided script:
 ```bash
-./format.sh
+./scripts/format.sh
 ```
 
 Or run ruff commands directly:
