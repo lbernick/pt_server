@@ -1,12 +1,15 @@
 """Pytest configuration and shared fixtures."""
 
 import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
+from auth import AuthenticatedUser, FirebaseUser
 from database import Base
+from models import UserDB
 
 
 def get_test_db_url():
@@ -78,3 +81,52 @@ def db_session(test_engine):
     session.close()
     transaction.rollback()
     connection.close()
+
+
+# Authentication fixtures
+
+
+@pytest.fixture
+def mock_firebase_auth():
+    """Mock Firebase auth for testing."""
+    with patch("auth.get_firebase_auth") as mock:
+        mock_auth = MagicMock()
+        mock.return_value = mock_auth
+        yield mock_auth
+
+
+@pytest.fixture
+def test_firebase_user() -> FirebaseUser:
+    """Create a test Firebase user."""
+    return FirebaseUser(
+        uid="test_firebase_uid_123",
+        email="test@example.com",
+        email_verified=True,
+        claims={"uid": "test_firebase_uid_123", "email": "test@example.com"},
+    )
+
+
+@pytest.fixture
+def test_user(db_session: Session, test_firebase_user: FirebaseUser) -> UserDB:
+    """Create a test user in the database."""
+    user = UserDB(
+        firebase_uid=test_firebase_user.uid,
+        email=test_firebase_user.email,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def test_authenticated_user(
+    test_user: UserDB, test_firebase_user: FirebaseUser
+) -> AuthenticatedUser:
+    """Create a test authenticated user context."""
+    return AuthenticatedUser(
+        firebase_uid=test_user.firebase_uid,
+        user_id=test_user.id,
+        email=test_user.email,
+        firebase_user=test_firebase_user,
+    )

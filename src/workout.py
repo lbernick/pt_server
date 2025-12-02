@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ai_utils import call_ai_agent
+from auth import AuthenticatedUser, get_or_create_user
 from database import get_db
 from models import TrainingPlanDB
 from typedefs import OnboardingState, TrainingPlan, TrainingPlanResponse, Workout
@@ -154,12 +155,15 @@ def generate_plan_with_ai(client: Anthropic, state: OnboardingState) -> Training
     )
 
 
-def save_training_plan_to_db(db: Session, plan: TrainingPlan) -> TrainingPlanDB:
+def save_training_plan_to_db(
+    db: Session, plan: TrainingPlan, user_id
+) -> TrainingPlanDB:
     """Save generated training plan to database.
 
     Args:
         db: Database session
         plan: TrainingPlan pydantic model from AI
+        user_id: UUID of the user creating the plan
 
     Returns:
         TrainingPlanDB instance with related templates and schedule items
@@ -167,7 +171,7 @@ def save_training_plan_to_db(db: Session, plan: TrainingPlan) -> TrainingPlanDB:
     from models import ScheduleItemDB, TemplateDB
 
     # Create the training plan
-    db_plan = TrainingPlanDB(description=plan.description)
+    db_plan = TrainingPlanDB(description=plan.description, user_id=user_id)
     db.add(db_plan)
     db.flush()  # Get the ID without committing
 
@@ -175,6 +179,7 @@ def save_training_plan_to_db(db: Session, plan: TrainingPlan) -> TrainingPlanDB:
     template_map = {}  # Maps index -> TemplateDB
     for idx, template in enumerate(plan.templates):
         db_template = TemplateDB(
+            user_id=user_id,
             name=template.name,
             description=template.description,
             exercises=template.exercises,
@@ -257,6 +262,7 @@ async def generate_training_plan(
     state: OnboardingState,
     client: Anthropic = Depends(get_client),
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
 ):
     """Generate a weekly training plan based on onboarding information.
 
@@ -270,18 +276,19 @@ async def generate_training_plan(
     plan = generate_plan_with_ai(client, state)
 
     # Save to database
-    db_plan = save_training_plan_to_db(db, plan)
+    db_plan = save_training_plan_to_db(db, plan, user.user_id)
 
     # Convert to response format and return
     return convert_db_to_response(db_plan)
 
 
 @router.get("/training-plan", response_model=TrainingPlanResponse)
-async def get_training_plan(db: Session = Depends(get_db)):
+async def get_training_plan(
+    db: Session = Depends(get_db), user: AuthenticatedUser = Depends(get_or_create_user)
+):
     """Get the user's current training plan.
 
-    For now, this returns the most recently created training plan.
-    In the future, this will be filtered by user ID.
+    Returns the most recently created training plan for the authenticated user.
 
     Returns:
         TrainingPlanResponse with the most recent plan
@@ -289,9 +296,12 @@ async def get_training_plan(db: Session = Depends(get_db)):
     Raises:
         HTTPException: 404 if no training plan exists
     """
-    # Get the most recently created training plan
+    # Get the most recently created training plan for this user
     db_plan = (
-        db.query(TrainingPlanDB).order_by(TrainingPlanDB.created_at.desc()).first()
+        db.query(TrainingPlanDB)
+        .filter(TrainingPlanDB.user_id == user.user_id)
+        .order_by(TrainingPlanDB.created_at.desc())
+        .first()
     )
 
     if not db_plan:

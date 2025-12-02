@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from auth import AuthenticatedUser, get_or_create_user
 from database import get_db
 from models import WorkoutDB
 
@@ -49,10 +50,13 @@ class WorkoutResponse(BaseModel):
 
 @router.post("", response_model=WorkoutResponse, status_code=201)
 def create_workout(
-    workout: WorkoutCreateRequest, db: Session = Depends(get_db)
+    workout: WorkoutCreateRequest,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
 ) -> WorkoutResponse:
-    """Create a new workout."""
+    """Create a new workout for the authenticated user."""
     db_workout = WorkoutDB(
+        user_id=user.user_id,
         date=workout.date,
         start_time=workout.start_time,
         end_time=workout.end_time,
@@ -65,17 +69,34 @@ def create_workout(
 
 @router.get("", response_model=List[WorkoutResponse])
 def list_workouts(
-    skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
 ) -> List[WorkoutResponse]:
-    """List all workouts with pagination."""
-    workouts = db.query(WorkoutDB).offset(skip).limit(limit).all()
+    """List all workouts for the authenticated user with pagination."""
+    workouts = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.user_id == user.user_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return [WorkoutResponse.model_validate(w) for w in workouts]
 
 
 @router.get("/{workout_id}", response_model=WorkoutResponse)
-def get_workout(workout_id: UUID, db: Session = Depends(get_db)) -> WorkoutResponse:
-    """Get a specific workout by ID."""
-    workout = db.query(WorkoutDB).filter(WorkoutDB.id == workout_id).first()
+def get_workout(
+    workout_id: UUID,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
+) -> WorkoutResponse:
+    """Get a specific workout by ID (must belong to authenticated user)."""
+    workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
     return WorkoutResponse.model_validate(workout)
@@ -86,9 +107,14 @@ def update_workout(
     workout_id: UUID,
     workout: WorkoutUpdateRequest,
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
 ) -> WorkoutResponse:
-    """Partially update an existing workout."""
-    db_workout = db.query(WorkoutDB).filter(WorkoutDB.id == workout_id).first()
+    """Partially update an existing workout (must belong to authenticated user)."""
+    db_workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
     if not db_workout:
         raise HTTPException(status_code=404, detail="Workout not found")
 
@@ -103,9 +129,17 @@ def update_workout(
 
 
 @router.delete("/{workout_id}", status_code=204)
-def delete_workout(workout_id: UUID, db: Session = Depends(get_db)) -> None:
-    """Delete a workout."""
-    db_workout = db.query(WorkoutDB).filter(WorkoutDB.id == workout_id).first()
+def delete_workout(
+    workout_id: UUID,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
+) -> None:
+    """Delete a workout (must belong to authenticated user)."""
+    db_workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
     if not db_workout:
         raise HTTPException(status_code=404, detail="Workout not found")
 

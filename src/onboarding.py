@@ -4,6 +4,7 @@ from anthropic import Anthropic
 from fastapi import APIRouter, Depends
 
 from ai_utils import call_ai_agent
+from auth import AuthenticatedUser, get_or_create_user
 from typedefs import OnboardingRequest, OnboardingResponse, OnboardingState
 
 
@@ -115,12 +116,14 @@ router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 
 @router.post("/message")
 async def onboarding_message(
-    request: OnboardingRequest, client: Anthropic = Depends(get_client)
+    request: OnboardingRequest,
+    client: Anthropic = Depends(get_client),
+    user: AuthenticatedUser = Depends(get_or_create_user),
 ):
     """Handle onboarding conversation (both start and continuation)
 
-    If conversation_history is empty and latest_message is empty, starts a new conversation.
-    Otherwise, continues an existing conversation.
+    Requires authentication. If conversation_history is empty and latest_message is empty,
+    starts a new conversation. Otherwise, continues an existing conversation.
     """
     agent = OnboardingAgent(client)
 

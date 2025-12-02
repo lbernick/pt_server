@@ -4,10 +4,39 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+from auth import get_or_create_user
+from database import get_db
 from main import app
 from onboarding import get_client
 
-client = TestClient(app)
+
+@pytest.fixture
+def client(db_session, test_authenticated_user, mock_firebase_auth):
+    """Create test client with database and auth overrides."""
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    def override_auth():
+        return test_authenticated_user
+
+    # Mock Firebase token verification
+    mock_firebase_auth.verify_id_token.return_value = {
+        "uid": test_authenticated_user.firebase_uid,
+        "email": test_authenticated_user.email,
+        "email_verified": True,
+    }
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_or_create_user] = override_auth
+
+    test_client = TestClient(app)
+    yield test_client
+
+    app.dependency_overrides.clear()
 
 
 def create_mock_onboarding_start_response():
@@ -109,7 +138,7 @@ def mock_anthropic_client_complete():
     app.dependency_overrides.clear()
 
 
-def test_start_onboarding(mock_anthropic_client_start):
+def test_start_onboarding(client, mock_anthropic_client_start):
     """Test starting the onboarding conversation with empty request"""
     # Empty request to trigger start
     response = client.post("/api/v1/onboarding/message", json={})
@@ -135,7 +164,7 @@ def test_start_onboarding(mock_anthropic_client_start):
     mock_anthropic_client_start.messages.create.assert_called_once()
 
 
-def test_onboarding_message_basic(mock_anthropic_client_message):
+def test_onboarding_message_basic(client, mock_anthropic_client_message):
     """Test continuing onboarding conversation"""
     request_data = {
         "conversation_history": [
@@ -167,7 +196,7 @@ def test_onboarding_message_basic(mock_anthropic_client_message):
     mock_anthropic_client_message.messages.create.assert_called_once()
 
 
-def test_onboarding_message_with_complete_state(mock_anthropic_client_complete):
+def test_onboarding_message_with_complete_state(client, mock_anthropic_client_complete):
     """Test onboarding conversation that completes"""
     request_data = {
         "conversation_history": [
@@ -201,7 +230,9 @@ def test_onboarding_message_with_complete_state(mock_anthropic_client_complete):
     mock_anthropic_client_complete.messages.create.assert_called_once()
 
 
-def test_onboarding_message_with_history_but_no_message(mock_anthropic_client_start):
+def test_onboarding_message_with_history_but_no_message(
+    client, mock_anthropic_client_start
+):
     """Test that providing history but no message still works (treated as start)"""
     # History provided but empty message - should treat as continuation with empty message
     request_data = {"conversation_history": [], "latest_message": ""}

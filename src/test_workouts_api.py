@@ -6,14 +6,15 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from auth import get_or_create_user
 from database import get_db
 from main import app
-from models import WorkoutDB
+from models import UserDB, WorkoutDB
 
 
 @pytest.fixture
-def client(db_session):
-    """Create test client with database dependency override."""
+def client(db_session, test_authenticated_user, mock_firebase_auth):
+    """Create test client with database and auth overrides."""
 
     def override_get_db():
         try:
@@ -21,16 +22,30 @@ def client(db_session):
         finally:
             pass
 
+    def override_auth():
+        return test_authenticated_user
+
+    # Mock Firebase token verification
+    mock_firebase_auth.verify_id_token.return_value = {
+        "uid": test_authenticated_user.firebase_uid,
+        "email": test_authenticated_user.email,
+        "email_verified": True,
+    }
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_or_create_user] = override_auth
+
     test_client = TestClient(app)
     yield test_client
+
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def sample_workout(db_session):
+def sample_workout(db_session, test_user):
     """Create a sample workout in the database."""
     workout = WorkoutDB(
+        user_id=test_user.id,
         date=date(2025, 11, 30),
         start_time=datetime(2025, 11, 30, 9, 0, 0),
         end_time=datetime(2025, 11, 30, 10, 30, 0),
@@ -91,11 +106,11 @@ def test_list_workouts(client, sample_workout):
     assert data[0]["date"] == "2025-11-30"
 
 
-def test_list_workouts_pagination(client, db_session):
+def test_list_workouts_pagination(client, db_session, test_user):
     """Test workout pagination."""
     # Create multiple workouts
     for i in range(5):
-        workout = WorkoutDB(date=date(2025, 11, 20 + i))
+        workout = WorkoutDB(user_id=test_user.id, date=date(2025, 11, 20 + i))
         db_session.add(workout)
     db_session.commit()
 

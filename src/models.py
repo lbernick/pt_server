@@ -24,6 +24,7 @@ class UserDB(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    firebase_uid = Column(String, unique=True, nullable=False, index=True)
     email = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
     updated_at = Column(
@@ -31,7 +32,7 @@ class UserDB(Base):
     )
 
     def __repr__(self):
-        return f"<UserDB(id={self.id}, email={self.email})>"
+        return f"<UserDB(id={self.id}, email={self.email}, firebase_uid={self.firebase_uid})>"
 
 
 class WorkoutDB(Base):
@@ -40,6 +41,9 @@ class WorkoutDB(Base):
     __tablename__ = "workouts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
     date = Column(Date, nullable=False)
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
@@ -48,8 +52,11 @@ class WorkoutDB(Base):
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
 
+    # Relationship
+    user = relationship("UserDB", backref="workouts")
+
     def __repr__(self):
-        return f"<WorkoutDB(id={self.id}, date={self.date})>"
+        return f"<WorkoutDB(id={self.id}, user_id={self.user_id}, date={self.date})>"
 
 
 class TemplateDB(Base):
@@ -62,6 +69,9 @@ class TemplateDB(Base):
     __tablename__ = "templates"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     exercises = Column(JSONB, nullable=False)  # Array of exercise names as strings
@@ -70,8 +80,11 @@ class TemplateDB(Base):
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
 
+    # Relationship
+    user = relationship("UserDB", backref="templates")
+
     def __repr__(self):
-        return f"<TemplateDB(id={self.id}, name={self.name})>"
+        return f"<TemplateDB(id={self.id}, user_id={self.user_id}, name={self.name})>"
 
 
 class TrainingPlanDB(Base):
@@ -84,11 +97,17 @@ class TrainingPlanDB(Base):
     __tablename__ = "training_plans"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
     description = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
     updated_at = Column(
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
+
+    # Relationship to user
+    user = relationship("UserDB", backref="training_plans")
 
     # Relationship to schedule items (ordered by day_index)
     schedule_items = relationship(
@@ -99,7 +118,7 @@ class TrainingPlanDB(Base):
     )
 
     def __repr__(self):
-        return f"<TrainingPlanDB(id={self.id}, description={self.description})>"
+        return f"<TrainingPlanDB(id={self.id}, user_id={self.user_id}, description={self.description})>"
 
 
 # TODO: Not sure I really like this. Maybe this is not necessary if we ensure that templates
