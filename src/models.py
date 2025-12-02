@@ -86,6 +86,8 @@ class TrainingPlanDB(Base):
         return f"<TrainingPlanDB(id={self.id}, description={self.description})>"
 
 
+# TODO: Not sure I really like this. Maybe this is not necessary if we ensure that templates
+# are created in order, and then always order a plan's templates by creation time?
 class ScheduleItemDB(Base):
     """Database model for schedule items.
 

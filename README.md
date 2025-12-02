@@ -114,6 +114,41 @@ curl -X POST http://localhost:8000/api/v1/generate-training-plan \
 
 Note: The `microcycle` array represents which template to use each day (Monday=index 0), where `-1` indicates a rest day.
 
+### GET /api/v1/training-plan
+Get the user's current training plan. Currently returns the most recently created training plan.
+
+**Example CURL command:**
+```bash
+curl http://localhost:8000/api/v1/training-plan
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-456",
+  "description": "4-day upper/lower strength training split",
+  "templates": [
+    {
+      "id": "uuid-789",
+      "name": "Upper Body Strength",
+      "description": "Focus on compound pressing and pulling",
+      "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
+    },
+    {
+      "id": "uuid-790",
+      "name": "Lower Body Power",
+      "description": "Build leg strength",
+      "exercises": ["Back Squat", "Romanian Deadlift"]
+    }
+  ],
+  "microcycle": [0, 1, -1, 0, 1, -1, -1],
+  "created_at": "2025-12-01T10:30:00Z",
+  "updated_at": "2025-12-01T10:30:00Z"
+}
+```
+
+Returns 404 if no training plan exists.
+
 ### GET /api/v1/templates
 List all workout templates with pagination.
 

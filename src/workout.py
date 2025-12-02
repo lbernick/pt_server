@@ -1,7 +1,7 @@
 import json
 
 from anthropic import Anthropic
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -271,6 +271,31 @@ async def generate_training_plan(
 
     # Save to database
     db_plan = save_training_plan_to_db(db, plan)
+
+    # Convert to response format and return
+    return convert_db_to_response(db_plan)
+
+
+@router.get("/training-plan", response_model=TrainingPlanResponse)
+async def get_training_plan(db: Session = Depends(get_db)):
+    """Get the user's current training plan.
+
+    For now, this returns the most recently created training plan.
+    In the future, this will be filtered by user ID.
+
+    Returns:
+        TrainingPlanResponse with the most recent plan
+
+    Raises:
+        HTTPException: 404 if no training plan exists
+    """
+    # Get the most recently created training plan
+    db_plan = (
+        db.query(TrainingPlanDB).order_by(TrainingPlanDB.created_at.desc()).first()
+    )
+
+    if not db_plan:
+        raise HTTPException(status_code=404, detail="No training plan found")
 
     # Convert to response format and return
     return convert_db_to_response(db_plan)

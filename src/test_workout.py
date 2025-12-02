@@ -4,13 +4,13 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+from database import get_db
 from main import app
-from models import TemplateDB, TrainingPlanDB, ScheduleItemDB
-from typedefs import TrainingPlan, Template
+from models import TemplateDB
+from typedefs import Template, TrainingPlan
 from workout import (
     build_training_plan_prompt,
     convert_db_to_response,
-    generate_plan_with_ai,
     get_client,
     save_training_plan_to_db,
 )
@@ -153,7 +153,9 @@ def test_generate_workout_missing_prompt(mock_anthropic_client):
 def create_mock_training_plan_response():
     """Create a mock training plan response matching the TrainingPlan schema."""
     training_plan_json = {
-        "description": "A 3-day strength training program focused on compound movements",
+        "description": (
+            "A 3-day strength training program focused on compound movements"
+        ),
         "templates": [
             {
                 "name": "Upper Body Strength",
@@ -196,6 +198,21 @@ def mock_anthropic_client_training_plan():
 
     yield mock_client
 
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def test_client_with_db(db_session):
+    """Create test client with database dependency override."""
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield client
     app.dependency_overrides.clear()
 
 
@@ -393,11 +410,6 @@ def test_save_training_plan_to_db(db_session):
     assert db_plan.created_at is not None
 
     # Verify Templates were saved
-    templates_in_db = (
-        db_session.query(TemplateDB)
-        .filter_by(id=db_plan.schedule_items[0].template_id)
-        .all()
-    )
     assert len(db_plan.schedule_items) == 7  # 7 days in microcycle
 
     # Verify ScheduleItems were saved correctly
@@ -491,7 +503,6 @@ def test_training_plan_with_duplicate_templates(db_session):
     db_plan = save_training_plan_to_db(db_session, plan)
 
     # Verify only ONE template was created
-    all_templates = db_session.query(TemplateDB).all()
     plan_template_ids = {
         item.template_id for item in db_plan.schedule_items if item.template_id
     }
@@ -504,3 +515,88 @@ def test_training_plan_with_duplicate_templates(db_session):
     assert (
         db_plan.schedule_items[0].template_id == db_plan.schedule_items[4].template_id
     )
+
+
+def test_get_training_plan_empty_database(test_client_with_db):
+    """Test getting training plan when database is empty."""
+    response = test_client_with_db.get("/api/v1/training-plan")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No training plan found"
+
+
+def test_get_training_plan_success(test_client_with_db, db_session):
+    """Test getting the most recent training plan."""
+    # Create and save a training plan
+    plan = TrainingPlan(
+        description="Test training plan",
+        templates=[
+            Template(
+                name="Upper Body",
+                description="Upper body workout",
+                exercises=["Bench Press", "Rows"],
+            ),
+        ],
+        microcycle=[0, -1, 0, -1, 0, -1, -1],
+    )
+
+    db_plan = save_training_plan_to_db(db_session, plan)
+
+    # Get the training plan via API
+    response = test_client_with_db.get("/api/v1/training-plan")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify response structure
+    assert data["id"] == str(db_plan.id)
+    assert data["description"] == "Test training plan"
+    assert len(data["templates"]) == 1
+    assert data["templates"][0]["name"] == "Upper Body"
+    assert data["microcycle"] == [0, -1, 0, -1, 0, -1, -1]
+    assert "created_at" in data
+    assert "updated_at" in data
+
+
+def test_get_training_plan_returns_most_recent(test_client_with_db, db_session):
+    """Test that GET /training-plan returns the most recently created plan."""
+    from datetime import UTC, datetime, timedelta
+
+    # Create first plan
+    plan1 = TrainingPlan(
+        description="Older plan",
+        templates=[
+            Template(
+                name="Workout A",
+                description="First workout",
+                exercises=["Exercise 1"],
+            ),
+        ],
+        microcycle=[0, -1, -1, -1, -1, -1, -1],
+    )
+    db_plan1 = save_training_plan_to_db(db_session, plan1)
+
+    # Manually set created_at to be older
+    db_plan1.created_at = datetime.now(UTC) - timedelta(hours=1)
+    db_session.commit()
+
+    # Create second plan (more recent)
+    plan2 = TrainingPlan(
+        description="Newer plan",
+        templates=[
+            Template(
+                name="Workout B",
+                description="Second workout",
+                exercises=["Exercise 2"],
+            ),
+        ],
+        microcycle=[-1, 0, -1, -1, -1, -1, -1],
+    )
+    db_plan2 = save_training_plan_to_db(db_session, plan2)
+
+    # Get training plan - should return the newer one
+    response = test_client_with_db.get("/api/v1/training-plan")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["id"] == str(db_plan2.id)
+    assert data["description"] == "Newer plan"
+    assert data["templates"][0]["name"] == "Workout B"
