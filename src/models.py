@@ -18,6 +18,22 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 
+class UserDB(Base):
+    """Database model for users."""
+
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
+    )
+
+    def __repr__(self):
+        return f"<UserDB(id={self.id}, email={self.email})>"
+
+
 class WorkoutDB(Base):
     """Database model for workouts."""
 

@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from database import get_db
 from main import app
-from models import TemplateDB
 from typedefs import Template, TrainingPlan
 from workout import (
     build_training_plan_prompt,
