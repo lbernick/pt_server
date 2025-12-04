@@ -5,13 +5,8 @@ from fastapi import APIRouter, Depends
 
 from ai_utils import call_ai_agent
 from auth import AuthenticatedUser, get_or_create_user
+from client import get_anthropic_client
 from typedefs import OnboardingRequest, OnboardingResponse, OnboardingState
-
-
-# Placeholder dependency that will be overridden by main.py
-def get_client() -> Anthropic:
-    """Placeholder - overridden by main.py's get_anthropic_client"""
-    raise NotImplementedError("Client dependency not configured")
 
 
 class OnboardingAgent:
@@ -19,12 +14,15 @@ class OnboardingAgent:
         self.client = client
 
     def get_system_prompt(self) -> str:
-        return """You are an expert fitness coach conducting an intake interview with a new client.
+        return """You are an expert fitness coach conducting an intake interview
+with a new client.
 
-Your goal is to gather enough information to create a personalized 12-week workout plan. You need to understand:
+Your goal is to gather enough information to create a personalized
+12-week workout plan. You need to understand:
 
 1. FITNESS GOALS
-   - What they want to achieve (strength, muscle gain, weight loss, athletic performance, general fitness)
+   - What they want to achieve (strength, muscle gain, weight loss,
+     athletic performance, general fitness)
    - Timeline and specific targets if any
    - Priority goals if multiple
 
@@ -53,8 +51,10 @@ You must respond with JSON in this exact format:
   "message": "Your response to the user",
   "is_complete": false,  // Set to true only when you have ALL necessary information
   "state": {
-    "fitness_goals": ["list", "of", "goals", "in", "priority", "order"],  // null if not yet known
-    "experience_level": "description of current fitness and experience level",  // null if not yet known
+    "fitness_goals": ["list", "of", "goals", "in", "priority", "order"],
+    // null if not yet known
+    "experience_level": "description of current fitness and experience level",
+    // null if not yet known
     "current_routine": "description of current routine",  // null if not yet known
     "days_per_week": 4,  // null if not yet known
     "equipment_available": ["list", "of", "equipment"],  // null if not yet known
@@ -88,7 +88,10 @@ CRITICAL:
         except Exception:
             # Fallback if parsing fails
             return OnboardingResponse(
-                message="I'm having trouble processing that. Could you tell me a bit about your fitness goals?",
+                message=(
+                    "I'm having trouble processing that. "
+                    "Could you tell me a bit about your fitness goals?"
+                ),
                 is_complete=False,
                 state=OnboardingState(),
             )
@@ -101,7 +104,10 @@ CRITICAL:
             messages=[
                 {
                     "role": "user",
-                    "content": "Start the onboarding conversation. Greet the user and ask your first question.",
+                    "content": (
+                        "Start the onboarding conversation. "
+                        "Greet the user and ask your first question."
+                    ),
                 }
             ],
             response_model=OnboardingResponse,
@@ -117,13 +123,14 @@ router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 @router.post("/message")
 async def onboarding_message(
     request: OnboardingRequest,
-    client: Anthropic = Depends(get_client),
+    client: Anthropic = Depends(get_anthropic_client),
     user: AuthenticatedUser = Depends(get_or_create_user),
 ):
     """Handle onboarding conversation (both start and continuation)
 
-    Requires authentication. If conversation_history is empty and latest_message is empty,
-    starts a new conversation. Otherwise, continues an existing conversation.
+    Requires authentication. If conversation_history is empty and
+    latest_message is empty, starts a new conversation. Otherwise,
+    continues an existing conversation.
     """
     agent = OnboardingAgent(client)
 

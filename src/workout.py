@@ -7,17 +7,12 @@ from sqlalchemy.orm import Session
 
 from ai_utils import call_ai_agent
 from auth import AuthenticatedUser, get_or_create_user
+from client import get_anthropic_client
 from database import get_db
 from models import TrainingPlanDB
 from typedefs import OnboardingState, TrainingPlan, TrainingPlanResponse, Workout
 
 router = APIRouter(prefix="/api/v1", tags=["workout"])
-
-
-# Placeholder dependency that will be overridden by main.py
-def get_client() -> Anthropic:
-    """Placeholder - overridden by main.py's get_anthropic_client"""
-    raise NotImplementedError("Client dependency not configured")
 
 
 class WorkoutRequest(BaseModel):
@@ -35,12 +30,13 @@ The JSON must match this exact schema:
 
 {json.dumps(schema, indent=2)}
 
-CRITICAL: Return ONLY valid JSON matching this schema. No markdown, no explanation, no code blocks."""
+CRITICAL: Return ONLY valid JSON matching this schema. No markdown,
+no explanation, no code blocks."""
 
 
 @router.post("/generate-workout", response_model=Workout)
 async def generate_workout(
-    request: WorkoutRequest, client: Anthropic = Depends(get_client)
+    request: WorkoutRequest, client: Anthropic = Depends(get_anthropic_client)
 ):
     """Generate a workout based on user prompt and optional parameters."""
     user_prompt = f"Generate a workout based on: {request.prompt}"
@@ -69,16 +65,22 @@ Generate a training plan in valid JSON format matching this exact schema:
 {json.dumps(schema, indent=2)}
 
 A Template contains:
-- name: descriptive name for the workout (e.g., "Upper Body Strength", "Lower Body Power")
+- name: descriptive name for the workout (e.g., "Upper Body Strength",
+  "Lower Body Power")
 - description: brief overview of the workout's focus
-- exercises: list of exercises that will be performed (e.g., "Barbell Squat", "Bench Press", "Lunge"). Exercise names should be singular.
+- exercises: list of exercises that will be performed (e.g.,
+  "Barbell Squat", "Bench Press", "Lunge"). Exercise names should
+  be singular.
 
 A Training plan contains:
-- description: e.g. "3-day push-pull-legs strength training plan", "13-week marathon training plan"
+- description: e.g. "3-day push-pull-legs strength training plan",
+  "13-week marathon training plan"
 - templates: a list of Template objects
-- microcycle: a list containing the indexes of the template used on each day, or -1 for no workout.
-  The microcycle will be repeated once complete and its length should be a multiple of 7,
-  so that each template is repeated on the same day of the week. Assume the week starts on Monday.
+- microcycle: a list containing the indexes of the template used on
+  each day, or -1 for no workout. The microcycle will be repeated once
+  complete and its length should be a multiple of 7, so that each
+  template is repeated on the same day of the week. Assume the week
+  starts on Monday.
 
 Create a comprehensive weekly plan based on the user's:
 - Fitness goals
@@ -88,8 +90,9 @@ Create a comprehensive weekly plan based on the user's:
 - Any injuries or limitations
 - Preferences
 
-CRITICAL: Return ONLY valid JSON matching this schema. No markdown, no explanation, no code blocks.
-Assign workouts to specific days based on the days_per_week. Leave unassigned days as null."""
+CRITICAL: Return ONLY valid JSON matching this schema. No markdown,
+no explanation, no code blocks. Assign workouts to specific days based
+on the days_per_week. Leave unassigned days as null."""
 
 
 def build_training_plan_prompt(state: OnboardingState) -> str:
@@ -260,7 +263,7 @@ def convert_db_to_response(db_plan: TrainingPlanDB) -> TrainingPlanResponse:
 @router.post("/generate-training-plan", response_model=TrainingPlanResponse)
 async def generate_training_plan(
     state: OnboardingState,
-    client: Anthropic = Depends(get_client),
+    client: Anthropic = Depends(get_anthropic_client),
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(get_or_create_user),
 ):

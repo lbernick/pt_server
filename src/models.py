@@ -32,7 +32,10 @@ class UserDB(Base):
     )
 
     def __repr__(self):
-        return f"<UserDB(id={self.id}, email={self.email}, firebase_uid={self.firebase_uid})>"
+        return (
+            f"<UserDB(id={self.id}, email={self.email}, "
+            f"firebase_uid={self.firebase_uid})>"
+        )
 
 
 class WorkoutDB(Base):
@@ -118,11 +121,15 @@ class TrainingPlanDB(Base):
     )
 
     def __repr__(self):
-        return f"<TrainingPlanDB(id={self.id}, user_id={self.user_id}, description={self.description})>"
+        return (
+            f"<TrainingPlanDB(id={self.id}, user_id={self.user_id}, "
+            f"description={self.description})>"
+        )
 
 
-# TODO: Not sure I really like this. Maybe this is not necessary if we ensure that templates
-# are created in order, and then always order a plan's templates by creation time?
+# TODO: Not sure I really like this. Maybe this is not necessary if we
+# ensure that templates are created in order, and then always order a
+# plan's templates by creation time?
 class ScheduleItemDB(Base):
     """Database model for schedule items.
 
@@ -152,4 +159,7 @@ class ScheduleItemDB(Base):
     )
 
     def __repr__(self):
-        return f"<ScheduleItemDB(id={self.id}, plan_id={self.training_plan_id}, day={self.day_index})>"
+        return (
+            f"<ScheduleItemDB(id={self.id}, "
+            f"plan_id={self.training_plan_id}, day={self.day_index})>"
+        )

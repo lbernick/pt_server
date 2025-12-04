@@ -12,8 +12,9 @@ class Equipment(BaseModel):
 class Exercise(BaseModel):
     # TODO: Exercises should be identifiable by ID rather than name
     name: str
-    # TODO: How to represent exercises that can be done with different types of equipment?
-    # e.g. a goblet squat can be done with a dumbbell or kettlebell
+    # TODO: How to represent exercises that can be done with different
+    # types of equipment? e.g. a goblet squat can be done with a
+    # dumbbell or kettlebell
     equipment: Equipment
 
 
@@ -42,13 +43,14 @@ class Template(BaseModel):
 
 
 # TODO: Ideally a training plan would be more flexible than this
-# (e.g. biweekly repetition, training blocks, deload weeks, multiple workouts per day, etc)
+# (e.g. biweekly repetition, training blocks, deload weeks,
+# multiple workouts per day, etc)
 class TrainingPlan(BaseModel):
     description: str
     templates: List[Template]
-    microcycle: List[
-        int
-    ]  # The index of the template to use on each day of the microcycle, or None for no workout
+    microcycle: List[int]
+    # The index of the template to use on each day of the microcycle,
+    # or None for no workout
 
 
 class OnboardingMessage(BaseModel):

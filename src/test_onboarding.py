@@ -5,9 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from auth import get_or_create_user
+from client import get_anthropic_client
 from database import get_db
 from main import app
-from onboarding import get_client
 
 
 @pytest.fixture
@@ -42,7 +42,11 @@ def client(db_session, test_authenticated_user, mock_firebase_auth):
 def create_mock_onboarding_start_response():
     """Create a mock response for starting onboarding."""
     response_json = {
-        "message": "Hi! I'm excited to help you create a personalized workout plan. Let's start by understanding your fitness goals. What are you hoping to achieve with your training?",
+        "message": (
+            "Hi! I'm excited to help you create a personalized workout plan. "
+            "Let's start by understanding your fitness goals. What are you "
+            "hoping to achieve with your training?"
+        ),
         "is_complete": False,
         "state": {
             "fitness_goals": None,
@@ -60,7 +64,10 @@ def create_mock_onboarding_start_response():
 def create_mock_onboarding_message_response():
     """Create a mock response for continuing onboarding."""
     response_json = {
-        "message": "Great! Building strength is a solid goal. How much experience do you have with strength training?",
+        "message": (
+            "Great! Building strength is a solid goal. How much experience "
+            "do you have with strength training?"
+        ),
         "is_complete": False,
         "state": {
             "fitness_goals": ["build strength"],
@@ -78,7 +85,12 @@ def create_mock_onboarding_message_response():
 def create_mock_onboarding_complete_response():
     """Create a mock response when onboarding is complete."""
     response_json = {
-        "message": "Perfect! I have all the information I need to create your personalized workout plan. You're looking to build strength as an intermediate lifter, training 4 days per week for 60 minutes with full gym access. Let me create your plan!",
+        "message": (
+            "Perfect! I have all the information I need to create your "
+            "personalized workout plan. You're looking to build strength as "
+            "an intermediate lifter, training 4 days per week for 60 minutes "
+            "with full gym access. Let me create your plan!"
+        ),
         "is_complete": True,
         "state": {
             "fitness_goals": ["build strength", "muscle gain"],
@@ -101,7 +113,7 @@ def mock_anthropic_client_start():
     mock_response.content = [Mock(text=create_mock_onboarding_start_response())]
     mock_client.messages.create.return_value = mock_response
 
-    app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_anthropic_client] = lambda: mock_client
 
     yield mock_client
 
@@ -116,7 +128,7 @@ def mock_anthropic_client_message():
     mock_response.content = [Mock(text=create_mock_onboarding_message_response())]
     mock_client.messages.create.return_value = mock_response
 
-    app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_anthropic_client] = lambda: mock_client
 
     yield mock_client
 
@@ -131,7 +143,7 @@ def mock_anthropic_client_complete():
     mock_response.content = [Mock(text=create_mock_onboarding_complete_response())]
     mock_client.messages.create.return_value = mock_response
 
-    app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_anthropic_client] = lambda: mock_client
 
     yield mock_client
 
@@ -234,7 +246,8 @@ def test_onboarding_message_with_history_but_no_message(
     client, mock_anthropic_client_start
 ):
     """Test that providing history but no message still works (treated as start)"""
-    # History provided but empty message - should treat as continuation with empty message
+    # History provided but empty message - should treat as continuation
+    # with empty message
     request_data = {"conversation_history": [], "latest_message": ""}
     response = client.post("/api/v1/onboarding/message", json=request_data)
     assert response.status_code == 200

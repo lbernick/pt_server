@@ -100,25 +100,25 @@ async def verify_firebase_token(
             claims=decoded_token,
         )
 
-    except auth.InvalidIdTokenError:
+    except auth.InvalidIdTokenError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    except auth.ExpiredIdTokenError:
+        ) from err
+    except auth.ExpiredIdTokenError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token has expired",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from err
     except Exception as e:
         # Catch any other Firebase auth errors
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Authentication failed: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
 
 async def get_or_create_user(

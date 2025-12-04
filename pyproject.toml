@@ -11,7 +11,9 @@ select = [
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
 ]
-ignore = []
+ignore = [
+    "B008",  # Do not perform function call in argument defaults (FastAPI Depends pattern)
+]
 
 [tool.ruff.format]
 quote-style = "double"

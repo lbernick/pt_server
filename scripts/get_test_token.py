@@ -5,7 +5,8 @@ Get a Firebase Auth ID token for local testing with the Firebase Auth Emulator.
 Usage:
     python get_test_token.py
 
-Make sure the Firebase Auth Emulator is running on localhost:9099 before using this script.
+Make sure the Firebase Auth Emulator is running on localhost:9099
+before using this script.
 """
 
 import sys
@@ -43,7 +44,8 @@ def get_test_token():
             print(f"Response: {response.text}")
             print("\nMake sure:")
             print(
-                "1. Firebase Auth Emulator is running (firebase emulators:start --only auth)"
+                "1. Firebase Auth Emulator is running "
+                "(firebase emulators:start --only auth)"
             )
             print(
                 f"2. User {EMAIL} exists in the emulator (create at http://localhost:4000)"

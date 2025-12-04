@@ -5,13 +5,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from auth import get_or_create_user
+from client import get_anthropic_client
 from database import get_db
 from main import app
 from typedefs import Template, TrainingPlan
 from workout import (
     build_training_plan_prompt,
     convert_db_to_response,
-    get_client,
     save_training_plan_to_db,
 )
 
@@ -81,7 +81,7 @@ def mock_anthropic_client():
     mock_client.messages.create.return_value = mock_response
 
     # Override the dependency
-    app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_anthropic_client] = lambda: mock_client
 
     yield mock_client
 
@@ -221,7 +221,7 @@ def mock_anthropic_client_training_plan():
     mock_response.content = [Mock(text=create_mock_training_plan_response())]
     mock_client.messages.create.return_value = mock_response
 
-    app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_anthropic_client] = lambda: mock_client
 
     yield mock_client
 

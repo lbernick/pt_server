@@ -1,5 +1,7 @@
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
@@ -26,16 +28,12 @@ config.set_main_option(
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import models for autogenerate support
-import sys
-from pathlib import Path
-
 # Add src directory to path so we can import models
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Import all models so alembic can detect them
-import models  # noqa: F401
-from database import Base
+import models  # noqa: E402, F401
+from database import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
