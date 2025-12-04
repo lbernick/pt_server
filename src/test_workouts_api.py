@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from auth import get_or_create_user
 from database import get_db
 from main import app
-from models import UserDB, WorkoutDB
+from models import WorkoutDB
 
 
 @pytest.fixture

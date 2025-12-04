@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+from auth import get_or_create_user
 from database import get_db
 from main import app
 from typedefs import Template, TrainingPlan
@@ -14,7 +15,34 @@ from workout import (
     save_training_plan_to_db,
 )
 
-client = TestClient(app)
+
+@pytest.fixture
+def client(db_session, test_authenticated_user, mock_firebase_auth):
+    """Create test client with database and auth overrides."""
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    def override_auth():
+        return test_authenticated_user
+
+    # Mock Firebase token verification
+    mock_firebase_auth.verify_id_token.return_value = {
+        "uid": test_authenticated_user.firebase_uid,
+        "email": test_authenticated_user.email,
+        "email_verified": True,
+    }
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_or_create_user] = override_auth
+
+    test_client = TestClient(app)
+    yield test_client
+
+    app.dependency_overrides.clear()
 
 
 def create_mock_workout_response():
@@ -61,7 +89,7 @@ def mock_anthropic_client():
     app.dependency_overrides.clear()
 
 
-def test_generate_workout_basic(mock_anthropic_client):
+def test_generate_workout_basic(client, mock_anthropic_client):
     """Test basic workout generation"""
     workout_request = {"prompt": "upper body workout"}
     response = client.post("/api/v1/generate-workout", json=workout_request)
@@ -91,7 +119,7 @@ def test_generate_workout_basic(mock_anthropic_client):
     mock_anthropic_client.messages.create.assert_called_once()
 
 
-def test_generate_workout_with_difficulty(mock_anthropic_client):
+def test_generate_workout_with_difficulty(client, mock_anthropic_client):
     """Test workout generation with difficulty parameter"""
     workout_request = {"prompt": "leg day", "difficulty": "beginner"}
     response = client.post("/api/v1/generate-workout", json=workout_request)
@@ -102,7 +130,7 @@ def test_generate_workout_with_difficulty(mock_anthropic_client):
     assert len(data["exercises"]) > 0
 
 
-def test_generate_workout_with_duration(mock_anthropic_client):
+def test_generate_workout_with_duration(client, mock_anthropic_client):
     """Test workout generation with duration parameter"""
     workout_request = {
         "prompt": "full body workout",
@@ -116,7 +144,7 @@ def test_generate_workout_with_duration(mock_anthropic_client):
     assert len(data["exercises"]) > 0
 
 
-def test_generate_workout_with_all_parameters(mock_anthropic_client):
+def test_generate_workout_with_all_parameters(client, mock_anthropic_client):
     """Test workout generation with all optional parameters"""
     workout_request = {
         "prompt": "cardio and strength",
@@ -140,7 +168,7 @@ def test_generate_workout_with_all_parameters(mock_anthropic_client):
         assert len(workout_exercise["sets"]) > 0
 
 
-def test_generate_workout_missing_prompt(mock_anthropic_client):
+def test_generate_workout_missing_prompt(client, mock_anthropic_client):
     """Test that workout generation requires a prompt"""
     workout_request = {}
     response = client.post("/api/v1/generate-workout", json=workout_request)
@@ -200,22 +228,7 @@ def mock_anthropic_client_training_plan():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def test_client_with_db(db_session):
-    """Create test client with database dependency override."""
-
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    yield client
-    app.dependency_overrides.clear()
-
-
-def test_generate_training_plan_basic(mock_anthropic_client_training_plan):
+def test_generate_training_plan_basic(client, mock_anthropic_client_training_plan):
     """Test basic training plan generation with minimal onboarding state"""
     onboarding_state = {
         "fitness_goals": ["build strength"],
@@ -264,7 +277,9 @@ def test_generate_training_plan_basic(mock_anthropic_client_training_plan):
     mock_anthropic_client_training_plan.messages.create.assert_called_once()
 
 
-def test_generate_training_plan_complete_state(mock_anthropic_client_training_plan):
+def test_generate_training_plan_complete_state(
+    client, mock_anthropic_client_training_plan
+):
     """Test training plan generation with complete onboarding state"""
     onboarding_state = {
         "fitness_goals": ["build strength", "muscle gain"],
@@ -299,7 +314,9 @@ def test_generate_training_plan_complete_state(mock_anthropic_client_training_pl
     assert "4" in user_message
 
 
-def test_generate_training_plan_minimal_state(mock_anthropic_client_training_plan):
+def test_generate_training_plan_minimal_state(
+    client, mock_anthropic_client_training_plan
+):
     """Test training plan generation with minimal onboarding state"""
     onboarding_state = {
         "fitness_goals": ["general fitness"],
@@ -323,7 +340,9 @@ def test_generate_training_plan_minimal_state(mock_anthropic_client_training_pla
     mock_anthropic_client_training_plan.messages.create.assert_called_once()
 
 
-def test_generate_training_plan_with_injuries(mock_anthropic_client_training_plan):
+def test_generate_training_plan_with_injuries(
+    client, mock_anthropic_client_training_plan
+):
     """Test training plan generation respects injuries and limitations"""
     onboarding_state = {
         "fitness_goals": ["weight loss"],
@@ -380,7 +399,7 @@ def test_build_training_plan_prompt():
 # Database integration tests
 
 
-def test_save_training_plan_to_db(db_session):
+def test_save_training_plan_to_db(db_session, test_user):
     """Test saving a training plan to the database"""
     # Create a sample training plan (from AI)
     plan = TrainingPlan(
@@ -401,7 +420,7 @@ def test_save_training_plan_to_db(db_session):
     )
 
     # Save to database
-    db_plan = save_training_plan_to_db(db_session, plan)
+    db_plan = save_training_plan_to_db(db_session, plan, test_user.id)
 
     # Verify TrainingPlan was saved
     assert db_plan.id is not None
@@ -440,7 +459,7 @@ def test_save_training_plan_to_db(db_session):
     assert lower_template.exercises == ["Back Squat", "Romanian Deadlift"]
 
 
-def test_convert_db_to_response(db_session):
+def test_convert_db_to_response(db_session, test_user):
     """Test converting database model to API response format"""
     # Create test data in database
     plan = TrainingPlan(
@@ -460,7 +479,7 @@ def test_convert_db_to_response(db_session):
         microcycle=[0, -1, 1, -1, 0, -1, -1],
     )
 
-    db_plan = save_training_plan_to_db(db_session, plan)
+    db_plan = save_training_plan_to_db(db_session, plan, test_user.id)
 
     # Convert to response format
     response = convert_db_to_response(db_plan)
@@ -485,7 +504,7 @@ def test_convert_db_to_response(db_session):
     assert response.updated_at is not None
 
 
-def test_training_plan_with_duplicate_templates(db_session):
+def test_training_plan_with_duplicate_templates(db_session, test_user):
     """Test saving a plan where the same template is used multiple days"""
     plan = TrainingPlan(
         description="2-day repeated split",
@@ -499,7 +518,7 @@ def test_training_plan_with_duplicate_templates(db_session):
         microcycle=[0, -1, 0, -1, 0, -1, -1],  # Same workout 3x per week
     )
 
-    db_plan = save_training_plan_to_db(db_session, plan)
+    db_plan = save_training_plan_to_db(db_session, plan, test_user.id)
 
     # Verify only ONE template was created
     plan_template_ids = {
@@ -516,14 +535,14 @@ def test_training_plan_with_duplicate_templates(db_session):
     )
 
 
-def test_get_training_plan_empty_database(test_client_with_db):
+def test_get_training_plan_empty_database(client):
     """Test getting training plan when database is empty."""
-    response = test_client_with_db.get("/api/v1/training-plan")
+    response = client.get("/api/v1/training-plan")
     assert response.status_code == 404
     assert response.json()["detail"] == "No training plan found"
 
 
-def test_get_training_plan_success(test_client_with_db, db_session):
+def test_get_training_plan_success(client, db_session, test_user):
     """Test getting the most recent training plan."""
     # Create and save a training plan
     plan = TrainingPlan(
@@ -538,10 +557,10 @@ def test_get_training_plan_success(test_client_with_db, db_session):
         microcycle=[0, -1, 0, -1, 0, -1, -1],
     )
 
-    db_plan = save_training_plan_to_db(db_session, plan)
+    db_plan = save_training_plan_to_db(db_session, plan, test_user.id)
 
     # Get the training plan via API
-    response = test_client_with_db.get("/api/v1/training-plan")
+    response = client.get("/api/v1/training-plan")
     assert response.status_code == 200
     data = response.json()
 
@@ -555,7 +574,7 @@ def test_get_training_plan_success(test_client_with_db, db_session):
     assert "updated_at" in data
 
 
-def test_get_training_plan_returns_most_recent(test_client_with_db, db_session):
+def test_get_training_plan_returns_most_recent(client, db_session, test_user):
     """Test that GET /training-plan returns the most recently created plan."""
     from datetime import UTC, datetime, timedelta
 
@@ -571,7 +590,7 @@ def test_get_training_plan_returns_most_recent(test_client_with_db, db_session):
         ],
         microcycle=[0, -1, -1, -1, -1, -1, -1],
     )
-    db_plan1 = save_training_plan_to_db(db_session, plan1)
+    db_plan1 = save_training_plan_to_db(db_session, plan1, test_user.id)
 
     # Manually set created_at to be older
     db_plan1.created_at = datetime.now(UTC) - timedelta(hours=1)
@@ -589,10 +608,10 @@ def test_get_training_plan_returns_most_recent(test_client_with_db, db_session):
         ],
         microcycle=[-1, 0, -1, -1, -1, -1, -1],
     )
-    db_plan2 = save_training_plan_to_db(db_session, plan2)
+    db_plan2 = save_training_plan_to_db(db_session, plan2, test_user.id)
 
     # Get training plan - should return the newer one
-    response = test_client_with_db.get("/api/v1/training-plan")
+    response = client.get("/api/v1/training-plan")
     assert response.status_code == 200
     data = response.json()
 

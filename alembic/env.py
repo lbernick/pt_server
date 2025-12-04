@@ -33,10 +33,9 @@ from pathlib import Path
 # Add src directory to path so we can import models
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from database import Base
-
 # Import all models so alembic can detect them
 import models  # noqa: F401
+from database import Base
 
 target_metadata = Base.metadata
 

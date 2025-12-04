@@ -179,10 +179,13 @@ def test_template_exercises_structure(client, sample_template):
     assert len(data["exercises"]) == 3
 
 
-def test_template_with_no_description(client, db_session):
+def test_template_with_no_description(client, db_session, test_user):
     """Test template with null description."""
     template = TemplateDB(
-        name="Minimal Template", description=None, exercises=["Push-ups"]
+        user_id=test_user.id,
+        name="Minimal Template",
+        description=None,
+        exercises=["Push-ups"],
     )
     db_session.add(template)
     db_session.commit()

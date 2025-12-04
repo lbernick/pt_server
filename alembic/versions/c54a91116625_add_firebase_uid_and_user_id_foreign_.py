@@ -8,9 +8,9 @@ Create Date: 2025-12-02 16:08:10.914878
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c54a91116625"
@@ -25,19 +25,25 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_templates_user_id"), "templates", ["user_id"], unique=False
     )
-    op.create_foreign_key(None, "templates", "users", ["user_id"], ["id"])
+    op.create_foreign_key(
+        "fk_templates_user_id", "templates", "users", ["user_id"], ["id"]
+    )
     op.add_column("training_plans", sa.Column("user_id", sa.UUID(), nullable=False))
     op.create_index(
         op.f("ix_training_plans_user_id"), "training_plans", ["user_id"], unique=False
     )
-    op.create_foreign_key(None, "training_plans", "users", ["user_id"], ["id"])
+    op.create_foreign_key(
+        "fk_training_plans_user_id", "training_plans", "users", ["user_id"], ["id"]
+    )
     op.add_column("users", sa.Column("firebase_uid", sa.String(), nullable=False))
     op.create_index(
         op.f("ix_users_firebase_uid"), "users", ["firebase_uid"], unique=True
     )
     op.add_column("workouts", sa.Column("user_id", sa.UUID(), nullable=False))
     op.create_index(op.f("ix_workouts_user_id"), "workouts", ["user_id"], unique=False)
-    op.create_foreign_key(None, "workouts", "users", ["user_id"], ["id"])
+    op.create_foreign_key(
+        "fk_workouts_user_id", "workouts", "users", ["user_id"], ["id"]
+    )
     # ### end Alembic commands ###
 
 
