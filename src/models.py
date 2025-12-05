@@ -31,6 +31,9 @@ class UserDB(Base):
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
 
+    # Onboarding data stored as JSONB for flexibility
+    onboarding_data = Column(JSONB, nullable=True)
+
     def __repr__(self):
         return (
             f"<UserDB(id={self.id}, email={self.email}, "

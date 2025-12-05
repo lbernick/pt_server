@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from database import SessionLocal
-from models import WorkoutDB
+from models import UserDB, WorkoutDB
 
 # Load environment variables
 load_dotenv()
@@ -77,5 +77,77 @@ def create_test_workouts():
         db.close()
 
 
+def create_test_user_with_onboarding():
+    """Create a test user with partial onboarding data.
+
+    This is useful for testing the resume onboarding flow.
+    """
+    db = SessionLocal()
+    try:
+        # Check if test user exists
+        test_user = db.query(UserDB).filter(UserDB.email == "test@example.com").first()
+
+        if not test_user:
+            print("No test user found. Please create a test user first.")
+            print("Use the Firebase Auth Emulator to create: test@example.com")
+            return
+
+        # Update with partial onboarding data
+        test_user.onboarding_data = {
+            "fitness_goals": ["build strength"],
+            "experience_level": "intermediate",
+            "current_routine": None,
+            "days_per_week": None,
+            "equipment_available": None,
+            "injuries_limitations": None,
+            "preferences": None,
+        }
+
+        db.commit()
+        print(
+            f"\nUpdated test user ({test_user.email}) " "with partial onboarding data:"
+        )
+        print("  - Goals: build strength")
+        print("  - Experience: intermediate")
+        print("  - Other fields: Not yet collected")
+        print("\nUser can now resume onboarding from this state!")
+
+    except Exception as e:
+        print(f"Error updating test user: {e}")
+        db.rollback()
+        sys.exit(1)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
-    create_test_workouts()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Populate database with test data")
+    parser.add_argument(
+        "--workouts",
+        action="store_true",
+        help="Create test workout records",
+    )
+    parser.add_argument(
+        "--onboarding",
+        action="store_true",
+        help="Add partial onboarding data to test user",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run all population functions",
+    )
+
+    args = parser.parse_args()
+
+    # If no args, default to --all
+    if not (args.workouts or args.onboarding or args.all):
+        args.all = True
+
+    if args.all or args.workouts:
+        create_test_workouts()
+
+    if args.all or args.onboarding:
+        create_test_user_with_onboarding()

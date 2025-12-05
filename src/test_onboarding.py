@@ -8,6 +8,8 @@ from auth import get_or_create_user
 from client import get_anthropic_client
 from database import get_db
 from main import app
+from onboarding import merge_onboarding_states
+from typedefs import OnboardingState
 
 
 @pytest.fixture
@@ -254,3 +256,191 @@ def test_onboarding_message_with_history_but_no_message(
 
     # Should call start_conversation since both are empty
     mock_anthropic_client_start.messages.create.assert_called_once()
+
+
+# Unit tests for merge logic
+def test_merge_none_old_state():
+    """When old state is None, return new state as-is."""
+    new = OnboardingState(fitness_goals=["strength"])
+    result = merge_onboarding_states(None, new)
+    assert result.fitness_goals == ["strength"]
+
+
+def test_merge_preserves_old_when_new_is_none():
+    """When new field is None, preserve old field value."""
+    old = OnboardingState(fitness_goals=["strength"], days_per_week=4)
+    new = OnboardingState(fitness_goals=["strength"], days_per_week=None)
+
+    result = merge_onboarding_states(old, new)
+
+    assert result.fitness_goals == ["strength"]
+    assert result.days_per_week == 4  # Preserved from old
+
+
+def test_merge_updates_when_new_has_value():
+    """When new field has value, use it (even if different from old)."""
+    old = OnboardingState(experience_level="beginner")
+    new = OnboardingState(experience_level="intermediate")
+
+    result = merge_onboarding_states(old, new)
+
+    assert result.experience_level == "intermediate"
+
+
+def test_merge_empty_list_is_valid():
+    """Empty list [] is a valid value, not None."""
+    old = OnboardingState(injuries_limitations=["knee pain"])
+    new = OnboardingState(injuries_limitations=[])  # User says no limitations
+
+    result = merge_onboarding_states(old, new)
+
+    assert result.injuries_limitations == []  # Use new empty list
+
+
+def test_merge_all_fields():
+    """Test merging all fields simultaneously."""
+    old = OnboardingState(
+        fitness_goals=["strength"],
+        experience_level="beginner",
+        current_routine=None,
+        days_per_week=3,
+        equipment_available=None,
+        injuries_limitations=["knee"],
+        preferences=None,
+    )
+
+    new = OnboardingState(
+        fitness_goals=["strength", "muscle"],  # Updated
+        experience_level=None,  # Forgot
+        current_routine="PPL split",  # New info
+        days_per_week=4,  # Updated
+        equipment_available=["barbell"],  # New info
+        injuries_limitations=None,  # Forgot
+        preferences=None,  # Still unknown
+    )
+
+    result = merge_onboarding_states(old, new)
+
+    assert result.fitness_goals == ["strength", "muscle"]
+    assert result.experience_level == "beginner"  # Preserved
+    assert result.current_routine == "PPL split"
+    assert result.days_per_week == 4
+    assert result.equipment_available == ["barbell"]
+    assert result.injuries_limitations == ["knee"]  # Preserved
+    assert result.preferences is None
+
+
+# Integration tests for persistence
+def test_onboarding_persistence_on_first_message(
+    client, mock_anthropic_client_message, db_session
+):
+    """Test that onboarding state is saved to database on first message."""
+    from models import UserDB
+
+    request_data = {
+        "conversation_history": [],
+        "latest_message": "I want to build strength",
+    }
+
+    response = client.post("/api/v1/onboarding/message", json=request_data)
+    assert response.status_code == 200
+
+    # Verify state was saved to database
+    user = db_session.query(UserDB).first()
+    assert user.onboarding_data is not None
+    assert user.onboarding_data["fitness_goals"] == ["build strength"]
+
+
+def test_onboarding_resume_loads_previous_state(
+    client, mock_anthropic_client_start, db_session
+):
+    """Test that resuming onboarding loads previous state."""
+    from models import UserDB
+
+    # Setup: User has partial onboarding data
+    user = db_session.query(UserDB).first()
+    user.onboarding_data = {
+        "fitness_goals": ["strength"],
+        "experience_level": "intermediate",
+        "current_routine": None,
+        "days_per_week": None,
+        "equipment_available": None,
+        "injuries_limitations": None,
+        "preferences": None,
+    }
+    db_session.commit()
+
+    # Resume with empty request
+    response = client.post("/api/v1/onboarding/message", json={})
+    assert response.status_code == 200
+
+    data = response.json()
+    # Should return saved state in response
+    assert data["state"]["fitness_goals"] == ["strength"]
+    assert data["state"]["experience_level"] == "intermediate"
+
+
+def test_onboarding_merge_preserves_forgotten_fields(client, db_session):
+    """Test that merge preserves fields LLM forgot to include."""
+    from models import UserDB
+
+    # Setup: User has existing data
+    user = db_session.query(UserDB).first()
+    user.onboarding_data = {
+        "fitness_goals": ["strength"],
+        "experience_level": "intermediate",
+        "current_routine": "PPL",
+        "days_per_week": 4,
+        "equipment_available": ["barbell"],
+        "injuries_limitations": [],
+        "preferences": "compound lifts",
+    }
+    db_session.commit()
+
+    # Mock LLM response that "forgets" some fields
+    mock_response_json = {
+        "message": "Tell me more about your goals",
+        "is_complete": False,
+        "state": {
+            "fitness_goals": ["strength", "hypertrophy"],  # Updated
+            "experience_level": None,  # Forgot
+            "current_routine": None,  # Forgot
+            "days_per_week": 5,  # Updated
+            "equipment_available": None,  # Forgot
+            "injuries_limitations": None,  # Forgot
+            "preferences": None,  # Forgot
+        },
+    }
+
+    from client import get_anthropic_client
+    from main import app
+
+    mock_client = Mock()
+    mock_anthropic_response = Mock()
+    mock_anthropic_response.content = [Mock(text=json.dumps(mock_response_json))]
+    mock_client.messages.create.return_value = mock_anthropic_response
+
+    app.dependency_overrides[get_anthropic_client] = lambda: mock_client
+
+    request_data = {
+        "conversation_history": [{"role": "assistant", "content": "Hi"}],
+        "latest_message": "I want to add hypertrophy",
+    }
+
+    response = client.post("/api/v1/onboarding/message", json=request_data)
+    assert response.status_code == 200
+
+    data = response.json()
+    # Verify merged state preserves forgotten fields
+    assert data["state"]["fitness_goals"] == ["strength", "hypertrophy"]
+    assert data["state"]["experience_level"] == "intermediate"  # Preserved!
+    assert data["state"]["current_routine"] == "PPL"  # Preserved!
+    assert data["state"]["days_per_week"] == 5
+    assert data["state"]["equipment_available"] == ["barbell"]  # Preserved!
+    assert data["state"]["preferences"] == "compound lifts"  # Preserved!
+
+    # Verify it was saved to DB
+    db_session.refresh(user)
+    assert user.onboarding_data["experience_level"] == "intermediate"
+
+    app.dependency_overrides.clear()
