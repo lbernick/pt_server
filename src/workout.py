@@ -68,9 +68,12 @@ A Template contains:
 - name: descriptive name for the workout (e.g., "Upper Body Strength",
   "Lower Body Power")
 - description: brief overview of the workout's focus
-- exercises: list of exercises that will be performed (e.g.,
-  "Barbell Squat", "Bench Press", "Lunge"). Exercise names should
-  be singular.
+- exercises: list of TemplateExercise objects, where each contains:
+  * name: exercise name in singular form (e.g., "Barbell Squat", "Bench Press")
+  * sets: number of sets to perform (typically 3-5)
+  * rep_min: minimum reps per set (e.g., 8)
+  * rep_max: maximum reps per set (e.g., 12)
+  Note: For fixed rep schemes, rep_min equals rep_max (e.g., both 5 means "5 reps")
 
 A Training plan contains:
 - description: e.g. "3-day push-pull-legs strength training plan",
@@ -185,7 +188,8 @@ def save_training_plan_to_db(
             user_id=user_id,
             name=template.name,
             description=template.description,
-            exercises=template.exercises,
+            # Convert TemplateExercise objects to dicts for JSONB storage
+            exercises=[ex.model_dump() for ex in template.exercises],
         )
         db.add(db_template)
         db.flush()  # Get the ID

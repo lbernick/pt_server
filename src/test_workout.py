@@ -8,7 +8,7 @@ from auth import get_or_create_user
 from client import get_anthropic_client
 from database import get_db
 from main import app
-from typedefs import Template, TrainingPlan
+from typedefs import Template, TemplateExercise, TrainingPlan
 from workout import (
     build_training_plan_prompt,
     convert_db_to_response,
@@ -187,17 +187,59 @@ def create_mock_training_plan_response():
             {
                 "name": "Upper Body Strength",
                 "description": "Focus on compound pressing and pulling movements",
-                "exercises": ["Bench Press", "Bent Over Rows", "Overhead Press"],
+                "exercises": [
+                    {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+                    {"name": "Bent Over Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+                    {"name": "Overhead Press", "sets": 3, "rep_min": 8, "rep_max": 12},
+                ],
             },
             {
                 "name": "Lower Body Power",
                 "description": "Build leg strength with squats and deadlifts",
-                "exercises": ["Back Squat", "Romanian Deadlift", "Leg Press"],
+                "exercises": [
+                    {
+                        "name": "Back Squat",
+                        "sets": 5,
+                        "rep_min": 5,
+                        "rep_max": 5,
+                    },
+                    {
+                        "name": "Romanian Deadlift",
+                        "sets": 3,
+                        "rep_min": 8,
+                        "rep_max": 10,
+                    },
+                    {
+                        "name": "Leg Press",
+                        "sets": 3,
+                        "rep_min": 12,
+                        "rep_max": 15,
+                    },
+                ],
             },
             {
                 "name": "Upper Body Hypertrophy",
                 "description": "Volume work for muscle growth",
-                "exercises": ["Incline Dumbbell Press", "Cable Rows", "Lateral Raises"],
+                "exercises": [
+                    {
+                        "name": "Incline Dumbbell Press",
+                        "sets": 4,
+                        "rep_min": 10,
+                        "rep_max": 12,
+                    },
+                    {
+                        "name": "Cable Rows",
+                        "sets": 4,
+                        "rep_min": 10,
+                        "rep_max": 12,
+                    },
+                    {
+                        "name": "Lateral Raises",
+                        "sets": 3,
+                        "rep_min": 12,
+                        "rep_max": 15,
+                    },
+                ],
             },
         ],
         "microcycle": [
@@ -262,9 +304,20 @@ def test_generate_training_plan_basic(client, mock_anthropic_client_training_pla
         assert isinstance(template["name"], str)
         assert isinstance(template["exercises"], list)
         assert len(template["exercises"]) > 0
-        # Exercises should be strings (exercise names)
+        # Exercises should be TemplateExercise objects with sets and reps
         for exercise in template["exercises"]:
-            assert isinstance(exercise, str)
+            assert isinstance(exercise, dict)
+            assert "name" in exercise
+            assert "sets" in exercise
+            assert "rep_min" in exercise
+            assert "rep_max" in exercise
+            assert isinstance(exercise["name"], str)
+            assert isinstance(exercise["sets"], int)
+            assert isinstance(exercise["rep_min"], int)
+            assert isinstance(exercise["rep_max"], int)
+            assert exercise["sets"] > 0
+            assert exercise["rep_min"] > 0
+            assert exercise["rep_max"] >= exercise["rep_min"]
 
     # Verify microcycle structure
     assert isinstance(data["microcycle"], list)
@@ -408,12 +461,27 @@ def test_save_training_plan_to_db(db_session, test_user):
             Template(
                 name="Upper Body Strength",
                 description="Compound pressing and pulling",
-                exercises=["Bench Press", "Barbell Rows", "Overhead Press"],
+                exercises=[
+                    TemplateExercise(
+                        name="Bench Press", sets=4, rep_min=6, rep_max=8
+                    ),
+                    TemplateExercise(
+                        name="Barbell Rows", sets=4, rep_min=8, rep_max=10
+                    ),
+                    TemplateExercise(
+                        name="Overhead Press", sets=3, rep_min=8, rep_max=12
+                    ),
+                ],
             ),
             Template(
                 name="Lower Body Power",
                 description="Leg strength",
-                exercises=["Back Squat", "Romanian Deadlift"],
+                exercises=[
+                    TemplateExercise(name="Back Squat", sets=5, rep_min=5, rep_max=5),
+                    TemplateExercise(
+                        name="Romanian Deadlift", sets=3, rep_min=8, rep_max=10
+                    ),
+                ],
             ),
         ],
         microcycle=[0, 1, -1, 0, 1, -1, -1],  # Mon, Tue, Rest, Thu, Fri, Rest, Rest
@@ -449,14 +517,17 @@ def test_save_training_plan_to_db(db_session, test_user):
     upper_template = schedule_items[0].template
     assert upper_template.name == "Upper Body Strength"
     assert upper_template.exercises == [
-        "Bench Press",
-        "Barbell Rows",
-        "Overhead Press",
+        {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+        {"name": "Barbell Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+        {"name": "Overhead Press", "sets": 3, "rep_min": 8, "rep_max": 12},
     ]
 
     lower_template = schedule_items[1].template
     assert lower_template.name == "Lower Body Power"
-    assert lower_template.exercises == ["Back Squat", "Romanian Deadlift"]
+    assert lower_template.exercises == [
+        {"name": "Back Squat", "sets": 5, "rep_min": 5, "rep_max": 5},
+        {"name": "Romanian Deadlift", "sets": 3, "rep_min": 8, "rep_max": 10},
+    ]
 
 
 def test_convert_db_to_response(db_session, test_user):
@@ -468,12 +539,18 @@ def test_convert_db_to_response(db_session, test_user):
             Template(
                 name="Full Body A",
                 description="Workout A",
-                exercises=["Squat", "Bench Press"],
+                exercises=[
+                    TemplateExercise(name="Squat", sets=5, rep_min=5, rep_max=5),
+                    TemplateExercise(name="Bench Press", sets=4, rep_min=8, rep_max=10),
+                ],
             ),
             Template(
                 name="Full Body B",
                 description="Workout B",
-                exercises=["Deadlift", "Pull-ups"],
+                exercises=[
+                    TemplateExercise(name="Deadlift", sets=5, rep_min=5, rep_max=5),
+                    TemplateExercise(name="Pull-ups", sets=3, rep_min=8, rep_max=12),
+                ],
             ),
         ],
         microcycle=[0, -1, 1, -1, 0, -1, -1],
@@ -492,11 +569,17 @@ def test_convert_db_to_response(db_session, test_user):
 
     # Verify templates in response
     assert response.templates[0].name == "Full Body A"
-    assert response.templates[0].exercises == ["Squat", "Bench Press"]
+    assert response.templates[0].exercises == [
+        TemplateExercise(name="Squat", sets=5, rep_min=5, rep_max=5),
+        TemplateExercise(name="Bench Press", sets=4, rep_min=8, rep_max=10),
+    ]
     assert response.templates[0].id is not None
 
     assert response.templates[1].name == "Full Body B"
-    assert response.templates[1].exercises == ["Deadlift", "Pull-ups"]
+    assert response.templates[1].exercises == [
+        TemplateExercise(name="Deadlift", sets=5, rep_min=5, rep_max=5),
+        TemplateExercise(name="Pull-ups", sets=3, rep_min=8, rep_max=12),
+    ]
     assert response.templates[1].id is not None
 
     # Verify plan timestamps (but not template timestamps)
@@ -512,7 +595,11 @@ def test_training_plan_with_duplicate_templates(db_session, test_user):
             Template(
                 name="Full Body Workout",
                 description="Same workout multiple days",
-                exercises=["Squat", "Bench", "Deadlift"],
+                exercises=[
+                    TemplateExercise(name="Squat", sets=5, rep_min=5, rep_max=5),
+                    TemplateExercise(name="Bench", sets=4, rep_min=8, rep_max=10),
+                    TemplateExercise(name="Deadlift", sets=3, rep_min=5, rep_max=8),
+                ],
             ),
         ],
         microcycle=[0, -1, 0, -1, 0, -1, -1],  # Same workout 3x per week
@@ -551,7 +638,10 @@ def test_get_training_plan_success(client, db_session, test_user):
             Template(
                 name="Upper Body",
                 description="Upper body workout",
-                exercises=["Bench Press", "Rows"],
+                exercises=[
+                    TemplateExercise(name="Bench Press", sets=4, rep_min=8, rep_max=10),
+                    TemplateExercise(name="Rows", sets=4, rep_min=8, rep_max=10),
+                ],
             ),
         ],
         microcycle=[0, -1, 0, -1, 0, -1, -1],
@@ -585,7 +675,9 @@ def test_get_training_plan_returns_most_recent(client, db_session, test_user):
             Template(
                 name="Workout A",
                 description="First workout",
-                exercises=["Exercise 1"],
+                exercises=[
+                    TemplateExercise(name="Exercise 1", sets=3, rep_min=10, rep_max=12),
+                ],
             ),
         ],
         microcycle=[0, -1, -1, -1, -1, -1, -1],
@@ -603,7 +695,9 @@ def test_get_training_plan_returns_most_recent(client, db_session, test_user):
             Template(
                 name="Workout B",
                 description="Second workout",
-                exercises=["Exercise 2"],
+                exercises=[
+                    TemplateExercise(name="Exercise 2", sets=4, rep_min=8, rep_max=10),
+                ],
             ),
         ],
         microcycle=[-1, 0, -1, -1, -1, -1, -1],

@@ -213,7 +213,26 @@ curl -X POST http://localhost:8000/api/v1/generate-training-plan \
     {
       "name": "Upper Body Strength",
       "description": "Focus on compound pressing and pulling",
-      "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
+      "exercises": [
+        {
+          "name": "Bench Press",
+          "sets": 4,
+          "rep_min": 6,
+          "rep_max": 8
+        },
+        {
+          "name": "Barbell Rows",
+          "sets": 4,
+          "rep_min": 8,
+          "rep_max": 10
+        },
+        {
+          "name": "Overhead Press",
+          "sets": 3,
+          "rep_min": 8,
+          "rep_max": 12
+        }
+      ]
     }
   ],
   "microcycle": [0, 1, -1, 0, 1, -1, -1]
@@ -241,13 +260,45 @@ curl http://localhost:8000/api/v1/training-plan \
       "id": "uuid-789",
       "name": "Upper Body Strength",
       "description": "Focus on compound pressing and pulling",
-      "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
+      "exercises": [
+        {
+          "name": "Bench Press",
+          "sets": 4,
+          "rep_min": 6,
+          "rep_max": 8
+        },
+        {
+          "name": "Barbell Rows",
+          "sets": 4,
+          "rep_min": 8,
+          "rep_max": 10
+        },
+        {
+          "name": "Overhead Press",
+          "sets": 3,
+          "rep_min": 8,
+          "rep_max": 12
+        }
+      ]
     },
     {
       "id": "uuid-790",
       "name": "Lower Body Power",
       "description": "Build leg strength",
-      "exercises": ["Back Squat", "Romanian Deadlift"]
+      "exercises": [
+        {
+          "name": "Back Squat",
+          "sets": 5,
+          "rep_min": 5,
+          "rep_max": 5
+        },
+        {
+          "name": "Romanian Deadlift",
+          "sets": 3,
+          "rep_min": 8,
+          "rep_max": 10
+        }
+      ]
     }
   ],
   "microcycle": [0, 1, -1, 0, 1, -1, -1],
@@ -280,7 +331,26 @@ curl "http://localhost:8000/api/v1/templates?skip=0&limit=10" \
     "id": "uuid-123",
     "name": "Upper Body Strength",
     "description": "Focus on compound pressing and pulling",
-    "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "sets": 4,
+        "rep_min": 6,
+        "rep_max": 8
+      },
+      {
+        "name": "Barbell Rows",
+        "sets": 4,
+        "rep_min": 8,
+        "rep_max": 10
+      },
+      {
+        "name": "Overhead Press",
+        "sets": 3,
+        "rep_min": 8,
+        "rep_max": 12
+      }
+    ]
   }
 ]
 ```
@@ -300,7 +370,26 @@ curl http://localhost:8000/api/v1/templates/uuid-123 \
   "id": "uuid-123",
   "name": "Upper Body Strength",
   "description": "Focus on compound pressing and pulling",
-  "exercises": ["Bench Press", "Barbell Rows", "Overhead Press"]
+  "exercises": [
+    {
+      "name": "Bench Press",
+      "sets": 4,
+      "rep_min": 6,
+      "rep_max": 8
+    },
+    {
+      "name": "Barbell Rows",
+      "sets": 4,
+      "rep_min": 8,
+      "rep_max": 10
+    },
+    {
+      "name": "Overhead Press",
+      "sets": 3,
+      "rep_min": 8,
+      "rep_max": 12
+    }
+  ]
 }
 ```
 

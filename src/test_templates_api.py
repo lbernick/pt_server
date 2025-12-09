@@ -47,7 +47,11 @@ def sample_template(db_session, test_user):
         user_id=test_user.id,
         name="Upper Body Strength",
         description="Focus on compound pressing and pulling",
-        exercises=["Bench Press", "Barbell Rows", "Overhead Press"],
+        exercises=[
+            {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+            {"name": "Barbell Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+            {"name": "Overhead Press", "sets": 3, "rep_min": 8, "rep_max": 12},
+        ],
     )
     db_session.add(template)
     db_session.commit()
@@ -63,19 +67,29 @@ def multiple_templates(db_session, test_user):
             user_id=test_user.id,
             name="Upper Body",
             description="Upper body workout",
-            exercises=["Bench Press", "Rows"],
+            exercises=[
+                {"name": "Bench Press", "sets": 4, "rep_min": 8, "rep_max": 10},
+                {"name": "Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+            ],
         ),
         TemplateDB(
             user_id=test_user.id,
             name="Lower Body",
             description="Lower body workout",
-            exercises=["Squat", "Deadlift"],
+            exercises=[
+                {"name": "Squat", "sets": 5, "rep_min": 5, "rep_max": 5},
+                {"name": "Deadlift", "sets": 3, "rep_min": 5, "rep_max": 8},
+            ],
         ),
         TemplateDB(
             user_id=test_user.id,
             name="Full Body",
             description="Full body workout",
-            exercises=["Squat", "Bench", "Rows"],
+            exercises=[
+                {"name": "Squat", "sets": 4, "rep_min": 8, "rep_max": 10},
+                {"name": "Bench", "sets": 4, "rep_min": 8, "rep_max": 10},
+                {"name": "Rows", "sets": 3, "rep_min": 10, "rep_max": 12},
+            ],
         ),
     ]
     for template in templates:
@@ -95,7 +109,11 @@ def test_get_template(client, sample_template):
     assert data["id"] == str(sample_template.id)
     assert data["name"] == "Upper Body Strength"
     assert data["description"] == "Focus on compound pressing and pulling"
-    assert data["exercises"] == ["Bench Press", "Barbell Rows", "Overhead Press"]
+    assert data["exercises"] == [
+        {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+        {"name": "Barbell Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+        {"name": "Overhead Press", "sets": 3, "rep_min": 8, "rep_max": 12},
+    ]
 
 
 def test_get_template_not_found(client):
@@ -140,7 +158,9 @@ def test_list_templates_pagination(client, db_session, test_user):
             user_id=test_user.id,
             name=f"Template {i}",
             description=f"Description {i}",
-            exercises=[f"Exercise {i}"],
+            exercises=[
+                {"name": f"Exercise {i}", "sets": 3, "rep_min": 8, "rep_max": 12}
+            ],
         )
         db_session.add(template)
     db_session.commit()
@@ -169,14 +189,26 @@ def test_list_templates_with_limit(client, multiple_templates):
 
 
 def test_template_exercises_structure(client, sample_template):
-    """Test that exercises are returned as an array of strings."""
+    """Test that exercises are returned as TemplateExercise objects."""
     response = client.get(f"/api/v1/templates/{sample_template.id}")
     assert response.status_code == 200
     data = response.json()
 
     assert isinstance(data["exercises"], list)
-    assert all(isinstance(exercise, str) for exercise in data["exercises"])
     assert len(data["exercises"]) == 3
+    for exercise in data["exercises"]:
+        assert isinstance(exercise, dict)
+        assert "name" in exercise
+        assert "sets" in exercise
+        assert "rep_min" in exercise
+        assert "rep_max" in exercise
+        assert isinstance(exercise["name"], str)
+        assert isinstance(exercise["sets"], int)
+        assert isinstance(exercise["rep_min"], int)
+        assert isinstance(exercise["rep_max"], int)
+        assert exercise["sets"] > 0
+        assert exercise["rep_min"] > 0
+        assert exercise["rep_max"] >= exercise["rep_min"]
 
 
 def test_template_with_no_description(client, db_session, test_user):
@@ -185,7 +217,7 @@ def test_template_with_no_description(client, db_session, test_user):
         user_id=test_user.id,
         name="Minimal Template",
         description=None,
-        exercises=["Push-ups"],
+        exercises=[{"name": "Push-ups", "sets": 3, "rep_min": 10, "rep_max": 15}],
     )
     db_session.add(template)
     db_session.commit()

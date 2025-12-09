@@ -36,10 +36,24 @@ class Workout(BaseModel):
     exercises: List[WorkoutExercise]
 
 
+class TemplateExercise(BaseModel):
+    """Exercise within a template with sets and rep ranges.
+
+    Represents a single exercise with its prescribed volume.
+    Rep ranges allow for flexibility (e.g., 8-12 reps) or fixed reps when
+    min equals max.
+    """
+
+    name: str  # Exercise name (e.g., "Barbell Squat")
+    sets: int  # Number of sets to perform
+    rep_min: int  # Minimum reps per set
+    rep_max: int  # Maximum reps per set (can equal rep_min for fixed reps)
+
+
 class Template(BaseModel):
     name: str
     description: str | None = None
-    exercises: List[str]
+    exercises: List[TemplateExercise]
 
 
 # TODO: Ideally a training plan would be more flexible than this
@@ -86,7 +100,7 @@ class TemplateResponse(BaseModel):
     id: UUID
     name: str
     description: str | None = None
-    exercises: List[str]
+    exercises: List[TemplateExercise]
 
     class Config:
         from_attributes = True

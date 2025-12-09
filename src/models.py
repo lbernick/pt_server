@@ -80,7 +80,8 @@ class TemplateDB(Base):
     )
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    exercises = Column(JSONB, nullable=False)  # Array of exercise names as strings
+    # Array of TemplateExercise objects with sets/reps
+    exercises = Column(JSONB, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
     updated_at = Column(
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
