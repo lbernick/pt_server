@@ -121,6 +121,53 @@ def test_list_workouts_pagination(client, db_session, test_user):
     assert len(data) == 2
 
 
+def test_list_workouts_by_date(client, db_session, test_user):
+    """Test filtering workouts by date."""
+    # Create workouts on different dates
+    workout1 = WorkoutDB(user_id=test_user.id, date=date(2025, 12, 9))
+    workout2 = WorkoutDB(user_id=test_user.id, date=date(2025, 12, 9))
+    workout3 = WorkoutDB(user_id=test_user.id, date=date(2025, 12, 10))
+    db_session.add_all([workout1, workout2, workout3])
+    db_session.commit()
+
+    # Filter by specific date
+    response = client.get("/api/v1/workouts?date=2025-12-09")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert all(w["date"] == "2025-12-09" for w in data)
+
+    # Filter by different date
+    response = client.get("/api/v1/workouts?date=2025-12-10")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["date"] == "2025-12-10"
+
+    # No date filter returns all
+    response = client.get("/api/v1/workouts")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 3
+
+
+def test_get_todays_workouts(client, db_session, test_user):
+    """Test getting today's workouts."""
+    today = date.today()
+
+    # Create workout for today
+    workout_today = WorkoutDB(user_id=test_user.id, date=today)
+    db_session.add(workout_today)
+    db_session.commit()
+
+    # Get today's workouts
+    response = client.get(f"/api/v1/workouts?date={today.isoformat()}")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["date"] == today.isoformat()
+
+
 def test_get_workout(client, sample_workout):
     """Test getting a specific workout."""
     response = client.get(f"/api/v1/workouts/{sample_workout.id}")

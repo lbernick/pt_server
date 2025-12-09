@@ -393,6 +393,161 @@ curl http://localhost:8000/api/v1/templates/uuid-123 \
 }
 ```
 
+### GET /api/v1/workouts
+
+List workouts for the authenticated user with optional date filtering and pagination. **Requires authentication.**
+
+**Query Parameters:**
+- `skip` (int, default=0): Number of workouts to skip
+- `limit` (int, default=100): Maximum number of workouts to return
+- `date` (string, optional): Filter by date in YYYY-MM-DD format
+
+**Example: Get all workouts**
+```bash
+curl http://localhost:8000/api/v1/workouts \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Example: Get today's workouts**
+```bash
+curl "http://localhost:8000/api/v1/workouts?date=$(date +%Y-%m-%d)" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Example: Get workouts for a specific date**
+```bash
+curl "http://localhost:8000/api/v1/workouts?date=2025-12-09" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response format:**
+```json
+[
+  {
+    "id": "uuid-123",
+    "date": "2025-12-09",
+    "start_time": "2025-12-09T09:00:00",
+    "end_time": "2025-12-09T10:30:00",
+    "created_at": "2025-12-09T08:00:00Z",
+    "updated_at": "2025-12-09T08:00:00Z"
+  }
+]
+```
+
+### POST /api/v1/workouts
+
+Create a new workout for the authenticated user. **Requires authentication.**
+
+**Example CURL command:**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2025-12-09",
+    "start_time": "2025-12-09T09:00:00",
+    "end_time": "2025-12-09T10:30:00"
+  }'
+```
+
+**Minimal example (only date required):**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2025-12-09"
+  }'
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "date": "2025-12-09",
+  "start_time": "2025-12-09T09:00:00",
+  "end_time": "2025-12-09T10:30:00",
+  "created_at": "2025-12-09T08:00:00Z",
+  "updated_at": "2025-12-09T08:00:00Z"
+}
+```
+
+### GET /api/v1/workouts/:id
+
+Get a specific workout by ID. Only returns workouts that belong to the authenticated user. **Requires authentication.**
+
+**Example CURL command:**
+```bash
+curl http://localhost:8000/api/v1/workouts/uuid-123 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "date": "2025-12-09",
+  "start_time": "2025-12-09T09:00:00",
+  "end_time": "2025-12-09T10:30:00",
+  "created_at": "2025-12-09T08:00:00Z",
+  "updated_at": "2025-12-09T08:00:00Z"
+}
+```
+
+Returns 404 if workout not found or doesn't belong to the user.
+
+### PATCH /api/v1/workouts/:id
+
+Partially update an existing workout. Only provided fields will be updated. **Requires authentication.**
+
+**Example CURL command:**
+```bash
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2025-12-10",
+    "start_time": "2025-12-10T14:00:00",
+    "end_time": "2025-12-10T15:30:00"
+  }'
+```
+
+**Partial update example (only date):**
+```bash
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2025-12-10"
+  }'
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "date": "2025-12-10",
+  "start_time": "2025-12-10T14:00:00",
+  "end_time": "2025-12-10T15:30:00",
+  "created_at": "2025-12-09T08:00:00Z",
+  "updated_at": "2025-12-10T12:00:00Z"
+}
+```
+
+Returns 404 if workout not found or doesn't belong to the user.
+
+### DELETE /api/v1/workouts/:id
+
+Delete a workout. **Requires authentication.**
+
+**Example CURL command:**
+```bash
+curl -X DELETE http://localhost:8000/api/v1/workouts/uuid-123 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns 204 No Content on success. Returns 404 if workout not found or doesn't belong to the user.
+
 ## Code Formatting
 
 This project uses [Ruff](https://docs.astral.sh/ruff/) for code formatting and linting.

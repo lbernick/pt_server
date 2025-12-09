@@ -71,17 +71,31 @@ def create_workout(
 def list_workouts(
     skip: int = 0,
     limit: int = 100,
+    date: datetime.date | None = None,
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(get_or_create_user),
 ) -> List[WorkoutResponse]:
-    """List all workouts for the authenticated user with pagination."""
-    workouts = (
-        db.query(WorkoutDB)
-        .filter(WorkoutDB.user_id == user.user_id)
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    """List all workouts for the authenticated user with pagination.
+
+    Args:
+        skip: Number of workouts to skip (default: 0)
+        limit: Maximum number of workouts to return (default: 100)
+        date: Optional date filter (YYYY-MM-DD format) to get workouts for a
+            specific day
+        db: Database session
+        user: Authenticated user
+
+    Returns:
+        List of WorkoutResponse objects
+    """
+    query = db.query(WorkoutDB).filter(WorkoutDB.user_id == user.user_id)
+
+    # Apply date filter if provided
+    if date is not None:
+        query = query.filter(WorkoutDB.date == date)
+
+    workouts = query.offset(skip).limit(limit).all()
+
     return [WorkoutResponse.model_validate(w) for w in workouts]
 
 
