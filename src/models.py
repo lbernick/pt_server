@@ -56,6 +56,7 @@ class WorkoutDB(Base):
     date = Column(Date, nullable=False)
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
+    exercises = Column(JSONB, nullable=True)  # Exercise snapshot for this workout
     created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
     updated_at = Column(
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)

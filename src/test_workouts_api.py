@@ -297,3 +297,257 @@ def test_workout_with_template_relationship(db_session, test_user):
     # Verify backref - template.workouts should include the workout
     assert len(template.workouts) == 1
     assert template.workouts[0].id == workout_with_template.id
+
+
+def test_get_workout_snapshots_template(client, db_session, test_user):
+    """Test that getting a workout snapshots template exercises."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create a template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Upper Body",
+        description="Test template",
+        exercises=[
+            {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+            {"name": "Barbell Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+        ],
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+
+    # Create workout referencing template (no exercises)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # GET the workout - should trigger snapshot
+    response = client.get(f"/api/v1/workouts/{workout.id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify exercises were snapshotted
+    assert "exercises" in data
+    assert data["exercises"] is not None
+    assert len(data["exercises"]) == 2
+
+    # Verify exercise structure
+    first_exercise = data["exercises"][0]
+    assert first_exercise["name"] == "Bench Press"
+    assert first_exercise["target_sets"] == 4
+    assert first_exercise["target_rep_min"] == 6
+    assert first_exercise["target_rep_max"] == 8
+    assert "sets" in first_exercise
+    assert len(first_exercise["sets"]) == 4
+    # Verify sets are empty (ready for logging)
+    assert first_exercise["sets"][0]["reps"] is None
+    assert first_exercise["sets"][0]["weight"] is None
+    assert first_exercise["sets"][0]["completed"] is False
+
+
+def test_update_workout_snapshots_on_start(client, db_session, test_user):
+    """Test that setting start_time snapshots template exercises."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Leg Day",
+        description="Lower body",
+        exercises=[{"name": "Squat", "sets": 5, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout without exercises
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # PATCH with start_time - should trigger snapshot
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}",
+        json={"start_time": "2025-12-20T09:00:00"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify exercises were snapshotted
+    assert data["exercises"] is not None
+    assert len(data["exercises"]) == 1
+    assert data["exercises"][0]["name"] == "Squat"
+    assert data["exercises"][0]["target_sets"] == 5
+
+
+def test_update_workout_exercises(client, db_session, test_user):
+    """Test updating workout exercises via PATCH /exercises endpoint."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Push Day",
+        description="Chest and triceps",
+        exercises=[{"name": "Bench Press", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Update exercises with performance data
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {"reps": 10, "weight": 135.0, "completed": True, "notes": None},
+                        {"reps": 10, "weight": 135.0, "completed": True, "notes": None},
+                        {"reps": 8, "weight": 135.0, "completed": True, "notes": None},
+                    ],
+                    "notes": "Felt strong",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify exercises were updated
+    assert len(data["exercises"]) == 1
+    assert data["exercises"][0]["sets"][0]["reps"] == 10
+    assert data["exercises"][0]["sets"][0]["weight"] == 135.0
+    assert data["exercises"][0]["sets"][0]["completed"] is True
+    assert data["exercises"][0]["notes"] == "Felt strong"
+
+
+def test_workout_exercises_persisted(client, db_session, test_user):
+    """Test that exercise data is persisted to database."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test",
+        exercises=[{"name": "Squat", "sets": 1, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Update exercises
+    client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Squat",
+                    "target_sets": 1,
+                    "target_rep_min": 5,
+                    "target_rep_max": 5,
+                    "sets": [
+                        {"reps": 5, "weight": 225.0, "completed": True, "notes": None}
+                    ],
+                    "notes": None,
+                }
+            ]
+        },
+    )
+
+    # Retrieve workout directly from DB
+    db_workout = db_session.query(WorkoutDB).filter(WorkoutDB.id == workout_id).first()
+    assert db_workout.exercises is not None
+    assert db_workout.exercises[0]["sets"][0]["reps"] == 5
+    assert db_workout.exercises[0]["sets"][0]["weight"] == 225.0
+
+
+def test_workout_customization_independent_of_template(client, db_session, test_user):
+    """Test that workout customization doesn't affect template."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Original",
+        exercises=[{"name": "Exercise A", "sets": 3, "rep_min": 10, "rep_max": 12}],
+    )
+    db_session.add(template)
+    db_session.commit()
+    template_id = template.id
+
+    # Create workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template_id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Modify workout exercises (add a different exercise)
+    client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Exercise B",  # Different from template
+                    "target_sets": 4,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(4)
+                    ],
+                    "notes": None,
+                }
+            ]
+        },
+    )
+
+    # Verify workout has modified exercises
+    response = client.get(f"/api/v1/workouts/{workout_id}")
+    assert response.json()["exercises"][0]["name"] == "Exercise B"
+
+    # Verify template is unchanged
+    db_template = (
+        db_session.query(TemplateDB).filter(TemplateDB.id == template_id).first()
+    )
+    assert db_template.exercises[0]["name"] == "Exercise A"

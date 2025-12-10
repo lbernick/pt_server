@@ -1,5 +1,6 @@
 import json
 from datetime import date, timedelta
+from uuid import UUID
 
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +11,7 @@ from ai_utils import call_ai_agent
 from auth import AuthenticatedUser, get_or_create_user
 from client import get_anthropic_client
 from database import get_db
-from models import TrainingPlanDB, WorkoutDB
+from models import TemplateDB, TrainingPlanDB, WorkoutDB
 from typedefs import OnboardingState, TrainingPlan, TrainingPlanResponse, Workout
 
 router = APIRouter(prefix="/api/v1", tags=["workout"])
@@ -432,3 +433,62 @@ def create_upcoming_workouts(
         db.refresh(workout)
 
     return workouts
+
+
+def snapshot_template_exercises(db: Session, template_id: UUID) -> list[dict]:
+    """Convert template exercises to workout exercise format.
+
+    Creates a snapshot of template exercises in the format expected for
+    workout tracking. This preserves the template prescription (target sets/reps)
+    and creates empty set entries for the user to fill in with actual performance.
+
+    Template format: {"name": "...", "sets": 4, "rep_min": 8, "rep_max": 10}
+    Workout format: {
+        "name": "...",
+        "target_sets": 4,
+        "target_rep_min": 8,
+        "target_rep_max": 10,
+        "sets": [
+            {"reps": None, "weight": None, "completed": False, "notes": None},
+            ...
+        ],
+        "notes": None
+    }
+
+    Args:
+        db: Database session
+        template_id: UUID of template to snapshot
+
+    Returns:
+        List of exercise dicts in workout format with empty set data.
+        Returns empty list if template not found.
+    """
+    template = db.query(TemplateDB).filter(TemplateDB.id == template_id).first()
+    if not template:
+        return []
+
+    workout_exercises = []
+    for template_ex in template.exercises:
+        # Create empty set entries based on template
+        sets = [
+            {
+                "reps": None,
+                "weight": None,
+                "completed": False,
+                "notes": None,
+            }
+            for _ in range(template_ex["sets"])
+        ]
+
+        workout_exercises.append(
+            {
+                "name": template_ex["name"],
+                "target_sets": template_ex["sets"],
+                "target_rep_min": template_ex["rep_min"],
+                "target_rep_max": template_ex["rep_max"],
+                "sets": sets,
+                "notes": None,
+            }
+        )
+
+    return workout_exercises

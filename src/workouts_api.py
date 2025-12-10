@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from auth import AuthenticatedUser, get_or_create_user
 from database import get_db
 from models import WorkoutDB
+from typedefs import TrackedExercise
 
 router = APIRouter(prefix="/api/v1/workouts", tags=["workouts"])
 
@@ -38,14 +39,22 @@ class WorkoutResponse(BaseModel):
     """Response model for a workout."""
 
     id: UUID
+    template_id: Optional[UUID]
     date: datetime.date
     start_time: Optional[datetime.datetime]
     end_time: Optional[datetime.datetime]
+    exercises: Optional[List["TrackedExercise"]]
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
     class Config:
         from_attributes = True
+
+
+class WorkoutUpdateExercisesRequest(BaseModel):
+    """Request to update workout exercises."""
+
+    exercises: List["TrackedExercise"]
 
 
 @router.post("", response_model=WorkoutResponse, status_code=201)
@@ -105,7 +114,11 @@ def get_workout(
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(get_or_create_user),
 ) -> WorkoutResponse:
-    """Get a specific workout by ID (must belong to authenticated user)."""
+    """Get a specific workout by ID (must belong to authenticated user).
+
+    If the workout has a template but no exercises yet (future workout),
+    this will snapshot the template exercises for editing.
+    """
     workout = (
         db.query(WorkoutDB)
         .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
@@ -113,6 +126,15 @@ def get_workout(
     )
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Snapshot template exercises if not yet snapshotted
+    if workout.template_id and workout.exercises is None:
+        from workout import snapshot_template_exercises
+
+        workout.exercises = snapshot_template_exercises(db, workout.template_id)
+        db.commit()
+        db.refresh(workout)
+
     return WorkoutResponse.model_validate(workout)
 
 
@@ -123,7 +145,11 @@ def update_workout(
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(get_or_create_user),
 ) -> WorkoutResponse:
-    """Partially update an existing workout (must belong to authenticated user)."""
+    """Partially update an existing workout (must belong to authenticated user).
+
+    If start_time is being set, this will snapshot template exercises to enable
+    workout tracking.
+    """
     db_workout = (
         db.query(WorkoutDB)
         .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
@@ -134,12 +160,57 @@ def update_workout(
 
     # Use model_dump with exclude_unset=True to only get fields that were explicitly set
     update_data = workout.model_dump(exclude_unset=True)
+
+    # Snapshot on start if needed
+    if "start_time" in update_data and update_data["start_time"] is not None:
+        if db_workout.exercises is None and db_workout.template_id:
+            from workout import snapshot_template_exercises
+
+            db_workout.exercises = snapshot_template_exercises(
+                db, db_workout.template_id
+            )
+
     for field, value in update_data.items():
         setattr(db_workout, field, value)
 
     db.commit()
     db.refresh(db_workout)
     return WorkoutResponse.model_validate(db_workout)
+
+
+@router.patch("/{workout_id}/exercises", response_model=WorkoutResponse)
+def update_workout_exercises(
+    workout_id: UUID,
+    request: WorkoutUpdateExercisesRequest,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
+) -> WorkoutResponse:
+    """Update exercises for a specific workout.
+
+    This endpoint allows users to customize exercises for an individual
+    workout without affecting the template. If the workout doesn't have
+    exercises yet, it will snapshot the template first, then apply updates.
+    """
+    workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Snapshot first if needed
+    if workout.exercises is None and workout.template_id:
+        from workout import snapshot_template_exercises
+
+        workout.exercises = snapshot_template_exercises(db, workout.template_id)
+
+    # Update exercises with user's data
+    workout.exercises = [ex.model_dump() for ex in request.exercises]
+
+    db.commit()
+    db.refresh(workout)
+    return WorkoutResponse.model_validate(workout)
 
 
 @router.delete("/{workout_id}", status_code=204)

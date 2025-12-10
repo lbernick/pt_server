@@ -118,3 +118,28 @@ class TrainingPlanResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WorkoutSet(BaseModel):
+    """A single set within a workout exercise."""
+
+    reps: int | None = None
+    weight: float | None = None
+    completed: bool = False
+    notes: str | None = None
+
+
+class TrackedExercise(BaseModel):
+    """Exercise in a workout with performance tracking.
+
+    This model represents exercises that are tracked during a workout,
+    including the template prescription (target sets/reps) and actual
+    performance data (reps completed, weight used).
+    """
+
+    name: str
+    target_sets: int  # From template
+    target_rep_min: int  # From template
+    target_rep_max: int  # From template
+    sets: List[WorkoutSet]
+    notes: str | None = None
