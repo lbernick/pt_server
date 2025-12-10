@@ -712,3 +712,220 @@ def test_get_training_plan_returns_most_recent(client, db_session, test_user):
     assert data["id"] == str(db_plan2.id)
     assert data["description"] == "Newer plan"
     assert data["templates"][0]["name"] == "Workout B"
+
+
+def test_get_next_monday():
+    """Test calculating next Monday."""
+    from datetime import date
+
+    from workout import get_next_monday
+
+    # Test from a Monday (should return next Monday, 7 days later)
+    monday = date(2025, 12, 15)  # Monday, December 15, 2025
+    assert get_next_monday(monday) == date(2025, 12, 22)
+
+    # Test from a Tuesday
+    tuesday = date(2025, 12, 16)
+    assert get_next_monday(tuesday) == date(2025, 12, 22)
+
+    # Test from a Sunday
+    sunday = date(2025, 12, 14)
+    assert get_next_monday(sunday) == date(2025, 12, 15)
+
+    # Test from a Wednesday (mid-week)
+    wednesday = date(2025, 12, 10)
+    assert get_next_monday(wednesday) == date(2025, 12, 15)
+
+
+def test_create_upcoming_workouts_basic(db_session, test_user):
+    """Test creating upcoming workouts from a training plan."""
+    from datetime import date
+
+    from models import ScheduleItemDB, TemplateDB, TrainingPlanDB
+    from workout import create_upcoming_workouts
+
+    # Create templates
+    upper = TemplateDB(
+        user_id=test_user.id,
+        name="Upper Body",
+        description="Upper body workout",
+        exercises=[{"name": "Bench", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    lower = TemplateDB(
+        user_id=test_user.id,
+        name="Lower Body",
+        description="Lower body workout",
+        exercises=[{"name": "Squat", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add_all([upper, lower])
+    db_session.flush()
+
+    # Create training plan
+    plan = TrainingPlanDB(user_id=test_user.id, description="3-day upper/lower split")
+    db_session.add(plan)
+    db_session.flush()
+
+    # Create schedule: Upper, Lower, Rest, Upper, Lower, Rest, Rest
+    schedule = [
+        ScheduleItemDB(training_plan_id=plan.id, day_index=0, template_id=upper.id),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=1, template_id=lower.id),
+        ScheduleItemDB(
+            training_plan_id=plan.id, day_index=2, template_id=None
+        ),  # Rest
+        ScheduleItemDB(training_plan_id=plan.id, day_index=3, template_id=upper.id),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=4, template_id=lower.id),
+        ScheduleItemDB(
+            training_plan_id=plan.id, day_index=5, template_id=None
+        ),  # Rest
+        ScheduleItemDB(
+            training_plan_id=plan.id, day_index=6, template_id=None
+        ),  # Rest
+    ]
+    db_session.add_all(schedule)
+    db_session.commit()
+    db_session.refresh(plan)
+
+    # Create workouts for 2 weeks starting from a known Monday
+    start_monday = date(2025, 12, 15)  # Monday, December 15, 2025
+    workouts = create_upcoming_workouts(
+        db_session, plan, num_weeks=2, start_date=start_monday
+    )
+
+    # Verify: 2 weeks * 4 workout days per week = 8 workouts
+    assert len(workouts) == 8
+
+    # Verify first week pattern: Mon=Upper, Tue=Lower, Wed=Rest, Thu=Upper, Fri=Lower
+    assert workouts[0].date == date(2025, 12, 15)  # Monday
+    assert workouts[0].template_id == upper.id
+
+    assert workouts[1].date == date(2025, 12, 16)  # Tuesday
+    assert workouts[1].template_id == lower.id
+
+    # Wednesday (12/17) is rest - skipped
+
+    assert workouts[2].date == date(2025, 12, 18)  # Thursday
+    assert workouts[2].template_id == upper.id
+
+    assert workouts[3].date == date(2025, 12, 19)  # Friday
+    assert workouts[3].template_id == lower.id
+
+    # Saturday & Sunday (12/20-21) are rest - skipped
+
+    # Verify second week repeats the pattern
+    assert workouts[4].date == date(2025, 12, 22)  # Monday
+    assert workouts[4].template_id == upper.id
+
+    # Verify all workouts have no start/end times
+    for workout in workouts:
+        assert workout.start_time is None
+        assert workout.end_time is None
+        assert workout.user_id == test_user.id
+
+
+def test_create_upcoming_workouts_12_weeks(db_session, test_user):
+    """Test creating 12 weeks of workouts (default)."""
+    from datetime import date, timedelta
+
+    from models import ScheduleItemDB, TemplateDB, TrainingPlanDB
+    from workout import create_upcoming_workouts
+
+    # Create single template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Full Body",
+        description="Full body workout",
+        exercises=[{"name": "Squat", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add(template)
+    db_session.flush()
+
+    # Create training plan
+    plan = TrainingPlanDB(user_id=test_user.id, description="3x per week full body")
+    db_session.add(plan)
+    db_session.flush()
+
+    # Create schedule: Mon, Wed, Fri workouts; Tue, Thu, Sat, Sun rest
+    schedule = [
+        ScheduleItemDB(training_plan_id=plan.id, day_index=0, template_id=template.id),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=1, template_id=None),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=2, template_id=template.id),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=3, template_id=None),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=4, template_id=template.id),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=5, template_id=None),
+        ScheduleItemDB(training_plan_id=plan.id, day_index=6, template_id=None),
+    ]
+    db_session.add_all(schedule)
+    db_session.commit()
+    db_session.refresh(plan)
+
+    # Create workouts for 12 weeks (default)
+    start_monday = date(2026, 1, 5)  # Monday, January 5, 2026
+    workouts = create_upcoming_workouts(
+        db_session, plan, num_weeks=12, start_date=start_monday
+    )
+
+    # Verify: 12 weeks * 3 workout days per week = 36 workouts
+    assert len(workouts) == 36
+
+    # Verify first workout is on the start Monday
+    assert workouts[0].date == start_monday
+
+    # Verify last workout is within 12 weeks
+    last_date = start_monday + timedelta(days=(12 * 7) - 1)
+    assert workouts[-1].date <= last_date
+
+    # Verify all use the same template
+    for workout in workouts:
+        assert workout.template_id == template.id
+
+
+def test_create_upcoming_workouts_all_rest_days(db_session, test_user):
+    """Test plan with all rest days creates no workouts."""
+    from datetime import date
+
+    from models import ScheduleItemDB, TrainingPlanDB
+    from workout import create_upcoming_workouts
+
+    # Create training plan with all rest days
+    plan = TrainingPlanDB(user_id=test_user.id, description="Rest week")
+    db_session.add(plan)
+    db_session.flush()
+
+    # All rest days
+    schedule = [
+        ScheduleItemDB(training_plan_id=plan.id, day_index=i, template_id=None)
+        for i in range(7)
+    ]
+    db_session.add_all(schedule)
+    db_session.commit()
+    db_session.refresh(plan)
+
+    # Create workouts
+    workouts = create_upcoming_workouts(
+        db_session, plan, num_weeks=2, start_date=date(2025, 12, 15)
+    )
+
+    # Should create no workouts
+    assert len(workouts) == 0
+
+
+def test_create_upcoming_workouts_no_schedule_items(db_session, test_user):
+    """Test that function raises error if plan has no schedule items."""
+    from datetime import date
+
+    import pytest
+
+    from models import TrainingPlanDB
+    from workout import create_upcoming_workouts
+
+    # Create training plan without schedule items
+    plan = TrainingPlanDB(user_id=test_user.id, description="Empty plan")
+    db_session.add(plan)
+    db_session.commit()
+    db_session.refresh(plan)
+
+    # Should raise ValueError
+    with pytest.raises(ValueError, match="no schedule items"):
+        create_upcoming_workouts(
+            db_session, plan, num_weeks=1, start_date=date(2025, 12, 15)
+        )

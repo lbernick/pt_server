@@ -1,4 +1,5 @@
 import json
+from datetime import date, timedelta
 
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,7 @@ from ai_utils import call_ai_agent
 from auth import AuthenticatedUser, get_or_create_user
 from client import get_anthropic_client
 from database import get_db
-from models import TrainingPlanDB
+from models import TrainingPlanDB, WorkoutDB
 from typedefs import OnboardingState, TrainingPlan, TrainingPlanResponse, Workout
 
 router = APIRouter(prefix="/api/v1", tags=["workout"])
@@ -316,3 +317,114 @@ async def get_training_plan(
 
     # Convert to response format and return
     return convert_db_to_response(db_plan)
+
+
+def get_next_monday(from_date: date | None = None) -> date:
+    """Get the next Monday from the given date (or today).
+
+    Args:
+        from_date: Date to calculate from (default: today)
+
+    Returns:
+        Date of the next Monday
+
+    Examples:
+        - If from_date is Monday, returns the following Monday (7 days later)
+        - If from_date is Tuesday, returns the next Monday (6 days later)
+        - If from_date is Sunday, returns the next Monday (1 day later)
+    """
+    if from_date is None:
+        from_date = date.today()
+
+    days_until_monday = (7 - from_date.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7  # If today is Monday, return next Monday
+
+    return from_date + timedelta(days=days_until_monday)
+
+
+def create_upcoming_workouts(
+    db: Session,
+    training_plan: TrainingPlanDB,
+    num_weeks: int = 12,
+    start_date: date | None = None,
+) -> list[WorkoutDB]:
+    """Create upcoming workouts for a training plan.
+
+    Generates workout records for the specified number of weeks based on the
+    training plan's schedule. Workouts are created starting from the next Monday
+    (or a specified start date) and follow the training plan's schedule pattern.
+
+    Args:
+        db: Database session
+        training_plan: TrainingPlanDB instance with loaded schedule_items
+        num_weeks: Number of weeks to generate workouts for (default: 12)
+        start_date: Optional start date (default: next Monday from today)
+
+    Returns:
+        List of created WorkoutDB instances
+
+    Example:
+        If training plan has 7 schedule items (Mon-Sun) and num_weeks=12:
+        - 84 days of workouts will be created
+        - Each day uses the template from the corresponding schedule item
+        - Days with template_id=NULL are skipped (rest days)
+
+    Note:
+        This function does NOT check for existing workouts. Calling it multiple
+        times will create duplicate workouts for the same dates. Consider
+        deleting existing workouts for the user before calling this function
+        if you want to avoid duplicates.
+    """
+    # Calculate start date (next Monday if not provided)
+    if start_date is None:
+        start_date = get_next_monday()
+
+    # Ensure training plan has schedule items loaded
+    if not training_plan.schedule_items:
+        raise ValueError("Training plan has no schedule items")
+
+    # Get microcycle length from schedule items
+    microcycle_length = len(training_plan.schedule_items)
+
+    # Build a map of day_index -> template_id
+    schedule_map = {
+        item.day_index: item.template_id for item in training_plan.schedule_items
+    }
+
+    # Generate workouts for num_weeks
+    total_days = num_weeks * 7
+    workouts = []
+
+    for day_offset in range(total_days):
+        workout_date = start_date + timedelta(days=day_offset)
+
+        # Calculate which day in the microcycle (0-6, repeating)
+        day_in_cycle = day_offset % microcycle_length
+
+        # Get template_id for this day (None for rest days)
+        template_id = schedule_map.get(day_in_cycle)
+
+        # Skip rest days (template_id is None)
+        if template_id is None:
+            continue
+
+        # Create workout
+        workout = WorkoutDB(
+            user_id=training_plan.user_id,
+            template_id=template_id,
+            date=workout_date,
+            start_time=None,
+            end_time=None,
+        )
+        workouts.append(workout)
+
+    # Save all workouts to database
+    db.add_all(workouts)
+    db.commit()
+
+    # Refresh to get IDs
+    for workout in workouts:
+        db.refresh(workout)
+
+    return workouts
