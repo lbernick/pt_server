@@ -95,9 +95,7 @@ def create_test_workouts():
         for workout in workouts:
             db.refresh(workout)
             template_info = (
-                f"Template: {template.name}"
-                if workout.template_id
-                else "No template"
+                f"Template: {template.name}" if workout.template_id else "No template"
             )
             print(
                 f"  - ID: {workout.id}, Date: {workout.date}, "

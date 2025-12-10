@@ -278,13 +278,17 @@ async def generate_training_plan(
     1. Validates onboarding state
     2. Generates a training plan using AI
     3. Saves the plan to the database
-    4. Returns the plan with database IDs
+    4. Creates 12 weeks of upcoming workouts from the plan
+    5. Returns the plan with database IDs
     """
     # Generate plan using AI
     plan = generate_plan_with_ai(client, state)
 
     # Save to database
     db_plan = save_training_plan_to_db(db, plan, user.user_id)
+
+    # Create upcoming workouts (12 weeks starting next Monday)
+    create_upcoming_workouts(db, db_plan, num_weeks=12)
 
     # Convert to response format and return
     return convert_db_to_response(db_plan)

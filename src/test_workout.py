@@ -423,6 +423,60 @@ def test_generate_training_plan_with_injuries(
     assert "shoulder impingement" in user_message
 
 
+def test_generate_training_plan_creates_workouts(
+    client, db_session, test_authenticated_user, mock_anthropic_client_training_plan
+):
+    """Test that generating a training plan automatically creates workouts."""
+    from datetime import timedelta
+    from uuid import UUID
+
+    from models import WorkoutDB
+    from workout import get_next_monday
+
+    # Request to generate training plan with 3x/week schedule
+    onboarding_state = {
+        "fitness_goals": ["build strength"],
+        "experience_level": "intermediate",
+        "days_per_week": 3,
+    }
+    response = client.post("/api/v1/generate-training-plan", json=onboarding_state)
+
+    assert response.status_code == 200
+    plan_data = response.json()
+
+    # Verify plan was created
+    assert "id" in plan_data
+    assert "description" in plan_data
+    assert len(plan_data["templates"]) > 0
+    assert len(plan_data["microcycle"]) > 0
+
+    # Verify workouts were created
+    workouts = (
+        db_session.query(WorkoutDB)
+        .filter(WorkoutDB.user_id == test_authenticated_user.user_id)
+        .order_by(WorkoutDB.date)
+        .all()
+    )
+
+    # Should have 12 weeks * 3 days per week = 36 workouts
+    assert len(workouts) == 36
+
+    # Verify first workout is on next Monday
+    next_monday = get_next_monday()
+    assert workouts[0].date == next_monday
+
+    # Verify last workout is within 12 weeks
+    last_expected_date = next_monday + timedelta(days=(12 * 7) - 1)
+    assert workouts[-1].date <= last_expected_date
+
+    # Verify all workouts reference valid templates from the plan
+    template_ids = {UUID(t["id"]) for t in plan_data["templates"]}
+    for workout in workouts:
+        assert workout.template_id in template_ids
+        assert workout.start_time is None
+        assert workout.end_time is None
+
+
 # Unit tests for helper functions
 
 
@@ -462,9 +516,7 @@ def test_save_training_plan_to_db(db_session, test_user):
                 name="Upper Body Strength",
                 description="Compound pressing and pulling",
                 exercises=[
-                    TemplateExercise(
-                        name="Bench Press", sets=4, rep_min=6, rep_max=8
-                    ),
+                    TemplateExercise(name="Bench Press", sets=4, rep_min=6, rep_max=8),
                     TemplateExercise(
                         name="Barbell Rows", sets=4, rep_min=8, rep_max=10
                     ),
@@ -769,17 +821,11 @@ def test_create_upcoming_workouts_basic(db_session, test_user):
     schedule = [
         ScheduleItemDB(training_plan_id=plan.id, day_index=0, template_id=upper.id),
         ScheduleItemDB(training_plan_id=plan.id, day_index=1, template_id=lower.id),
-        ScheduleItemDB(
-            training_plan_id=plan.id, day_index=2, template_id=None
-        ),  # Rest
+        ScheduleItemDB(training_plan_id=plan.id, day_index=2, template_id=None),  # Rest
         ScheduleItemDB(training_plan_id=plan.id, day_index=3, template_id=upper.id),
         ScheduleItemDB(training_plan_id=plan.id, day_index=4, template_id=lower.id),
-        ScheduleItemDB(
-            training_plan_id=plan.id, day_index=5, template_id=None
-        ),  # Rest
-        ScheduleItemDB(
-            training_plan_id=plan.id, day_index=6, template_id=None
-        ),  # Rest
+        ScheduleItemDB(training_plan_id=plan.id, day_index=5, template_id=None),  # Rest
+        ScheduleItemDB(training_plan_id=plan.id, day_index=6, template_id=None),  # Rest
     ]
     db_session.add_all(schedule)
     db_session.commit()
