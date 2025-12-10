@@ -11,45 +11,77 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from database import SessionLocal
-from models import UserDB, WorkoutDB
+from models import TemplateDB, UserDB, WorkoutDB
 
 # Load environment variables
 load_dotenv()
 
 
 def create_test_workouts():
-    """Create test workout records in the database."""
+    """Create test workout records with optional template references."""
     db = SessionLocal()
     try:
-        # Clear existing workouts
-        db.query(WorkoutDB).delete()
-        db.commit()
-        print("Cleared existing workouts")
+        # Find the first user (or create if none exists)
+        test_user = db.query(UserDB).first()
+        if not test_user:
+            print("No users found. Please create a test user first.")
+            print("Use the Firebase Auth Emulator to create: test@example.com")
+            return
 
-        # Create test workouts
+        # Clear existing workouts for this user
+        db.query(WorkoutDB).filter(WorkoutDB.user_id == test_user.id).delete()
+        db.commit()
+        print(f"Cleared existing workouts for user {test_user.email}")
+
+        # Create a sample template
+        template = TemplateDB(
+            user_id=test_user.id,
+            name="Full Body Strength",
+            description="Compound movements for overall strength",
+            exercises=[
+                {"name": "Squat", "sets": 3, "rep_min": 8, "rep_max": 10},
+                {"name": "Bench Press", "sets": 3, "rep_min": 8, "rep_max": 10},
+                {"name": "Deadlift", "sets": 3, "rep_min": 5, "rep_max": 8},
+            ],
+        )
+        db.add(template)
+        db.flush()  # Get the template ID
+        print(f"Created template: {template.name}")
+
+        # Create test workouts - some with template, some without
         today = date.today()
         workouts = [
             WorkoutDB(
+                user_id=test_user.id,
+                template_id=template.id,  # Link to template
                 date=today - timedelta(days=7),
                 start_time=datetime(today.year, today.month, today.day - 7, 9, 0),
                 end_time=datetime(today.year, today.month, today.day - 7, 10, 30),
             ),
             WorkoutDB(
+                user_id=test_user.id,
+                template_id=None,  # No template
                 date=today - timedelta(days=5),
                 start_time=datetime(today.year, today.month, today.day - 5, 14, 0),
                 end_time=datetime(today.year, today.month, today.day - 5, 15, 15),
             ),
             WorkoutDB(
+                user_id=test_user.id,
+                template_id=template.id,  # Link to template
                 date=today - timedelta(days=3),
                 start_time=datetime(today.year, today.month, today.day - 3, 8, 30),
                 end_time=datetime(today.year, today.month, today.day - 3, 10, 0),
             ),
             WorkoutDB(
+                user_id=test_user.id,
+                template_id=None,  # No template
                 date=today - timedelta(days=1),
                 start_time=datetime(today.year, today.month, today.day - 1, 16, 0),
                 end_time=datetime(today.year, today.month, today.day - 1, 17, 30),
             ),
             WorkoutDB(
+                user_id=test_user.id,
+                template_id=template.id,  # Link to template
                 date=today,
                 start_time=None,
                 end_time=None,
@@ -62,9 +94,15 @@ def create_test_workouts():
         print(f"\nCreated {len(workouts)} test workouts:")
         for workout in workouts:
             db.refresh(workout)
+            template_info = (
+                f"Template: {template.name}"
+                if workout.template_id
+                else "No template"
+            )
             print(
                 f"  - ID: {workout.id}, Date: {workout.date}, "
-                f"Start: {workout.start_time}, End: {workout.end_time}"
+                f"Start: {workout.start_time}, End: {workout.end_time}, "
+                f"{template_info}"
             )
 
         print("\nDatabase populated successfully!")

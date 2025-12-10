@@ -50,6 +50,9 @@ class WorkoutDB(Base):
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
+    template_id = Column(
+        UUID(as_uuid=True), ForeignKey("templates.id"), nullable=True, index=True
+    )
     date = Column(Date, nullable=False)
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
@@ -58,8 +61,9 @@ class WorkoutDB(Base):
         DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC)
     )
 
-    # Relationship
+    # Relationships
     user = relationship("UserDB", backref="workouts")
+    template = relationship("TemplateDB", backref="workouts")
 
     def __repr__(self):
         return f"<WorkoutDB(id={self.id}, user_id={self.user_id}, date={self.date})>"

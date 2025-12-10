@@ -247,3 +247,53 @@ def test_delete_workout_not_found(client):
     response = client.delete(f"/api/v1/workouts/{fake_id}")
     assert response.status_code == 404
     assert response.json()["detail"] == "Workout not found"
+
+
+def test_workout_with_template_relationship(db_session, test_user):
+    """Test that a workout can optionally reference a template."""
+    from datetime import date
+
+    from models import TemplateDB, WorkoutDB
+
+    # Create a template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Upper Body",
+        description="Test template",
+        exercises=[{"name": "Bench Press", "sets": 4, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+
+    # Create workout WITH template
+    workout_with_template = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 9),
+    )
+    db_session.add(workout_with_template)
+
+    # Create workout WITHOUT template
+    workout_without_template = WorkoutDB(
+        user_id=test_user.id,
+        template_id=None,
+        date=date(2025, 12, 10),
+    )
+    db_session.add(workout_without_template)
+    db_session.commit()
+
+    # Refresh to load relationships
+    db_session.refresh(workout_with_template)
+    db_session.refresh(workout_without_template)
+    db_session.refresh(template)
+
+    # Verify relationships
+    assert workout_with_template.template_id == template.id
+    assert workout_with_template.template == template
+    assert workout_without_template.template_id is None
+    assert workout_without_template.template is None
+
+    # Verify backref - template.workouts should include the workout
+    assert len(template.workouts) == 1
+    assert template.workouts[0].id == workout_with_template.id
