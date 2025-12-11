@@ -183,6 +183,10 @@ def update_workout(
     if not db_workout:
         raise HTTPException(status_code=404, detail="Workout not found")
 
+    # Prevent modifications to finished workouts
+    if db_workout.end_time is not None:
+        raise HTTPException(status_code=400, detail="Cannot modify a finished workout")
+
     # Use model_dump with exclude_unset=True to only get fields that were explicitly set
     update_data = workout.model_dump(exclude_unset=True)
 
@@ -223,6 +227,10 @@ def update_workout_exercises(
     )
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Prevent modifications to finished workouts
+    if workout.end_time is not None:
+        raise HTTPException(status_code=400, detail="Cannot modify a finished workout")
 
     # Snapshot first if needed
     if workout.exercises is None and workout.template_id:

@@ -56,6 +56,21 @@ def sample_workout(db_session, test_user):
     return workout
 
 
+@pytest.fixture
+def unfinished_workout(db_session, test_user):
+    """Create an unfinished workout (not yet finished) in the database."""
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 11, 30),
+        start_time=datetime(2025, 11, 30, 9, 0, 0),
+        end_time=None,
+    )
+    db_session.add(workout)
+    db_session.commit()
+    db_session.refresh(workout)
+    return workout
+
+
 def test_create_workout(client):
     """Test creating a new workout."""
     response = client.post(
@@ -185,10 +200,10 @@ def test_get_workout_not_found(client):
     assert response.json()["detail"] == "Workout not found"
 
 
-def test_update_workout(client, sample_workout):
+def test_update_workout(client, unfinished_workout):
     """Test updating a workout."""
     response = client.patch(
-        f"/api/v1/workouts/{sample_workout.id}",
+        f"/api/v1/workouts/{unfinished_workout.id}",
         json={
             "date": "2025-12-05",
             "start_time": "2025-12-05T14:00:00",
@@ -197,24 +212,24 @@ def test_update_workout(client, sample_workout):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["id"] == str(sample_workout.id)
+    assert data["id"] == str(unfinished_workout.id)
     assert data["date"] == "2025-12-05"
     assert data["start_time"] == "2025-12-05T14:00:00"
     assert data["end_time"] == "2025-12-05T15:30:00"
 
 
-def test_update_workout_partial(client, sample_workout):
+def test_update_workout_partial(client, unfinished_workout):
     """Test partially updating a workout."""
     response = client.patch(
-        f"/api/v1/workouts/{sample_workout.id}",
+        f"/api/v1/workouts/{unfinished_workout.id}",
         json={"date": "2025-12-10"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["date"] == "2025-12-10"
-    # Original times should be preserved
+    # Original start time should be preserved, end_time should still be None
     assert data["start_time"] == "2025-11-30T09:00:00"
-    assert data["end_time"] == "2025-11-30T10:30:00"
+    assert data["end_time"] is None
 
 
 def test_update_workout_not_found(client):
@@ -226,6 +241,30 @@ def test_update_workout_not_found(client):
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Workout not found"
+
+
+def test_update_workout_already_finished(client, db_session, test_user):
+    """Test that updating a finished workout fails."""
+    from models import WorkoutDB
+
+    # Create finished workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+        end_time=datetime(2025, 12, 20, 10, 30, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to update it
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}",
+        json={"date": "2025-12-21"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Cannot modify a finished workout"
 
 
 def test_delete_workout(client, sample_workout):
@@ -440,6 +479,55 @@ def test_update_workout_exercises(client, db_session, test_user):
     assert data["exercises"][0]["sets"][0]["weight"] == 135.0
     assert data["exercises"][0]["sets"][0]["completed"] is True
     assert data["exercises"][0]["notes"] == "Felt strong"
+
+
+def test_update_workout_exercises_already_finished(client, db_session, test_user):
+    """Test that updating exercises on a finished workout fails."""
+    from models import WorkoutDB
+
+    # Create finished workout with exercises
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+        end_time=datetime(2025, 12, 20, 10, 30, 0),
+        exercises=[
+            {
+                "name": "Squat",
+                "target_sets": 5,
+                "target_rep_min": 5,
+                "target_rep_max": 5,
+                "sets": [
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None}
+                ],
+                "notes": None,
+            }
+        ],
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to update exercises
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Squat",
+                    "target_sets": 5,
+                    "target_rep_min": 5,
+                    "target_rep_max": 5,
+                    "sets": [
+                        {"reps": 6, "weight": 235.0, "completed": True, "notes": None}
+                    ],
+                    "notes": "Modified",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Cannot modify a finished workout"
 
 
 def test_workout_exercises_persisted(client, db_session, test_user):
