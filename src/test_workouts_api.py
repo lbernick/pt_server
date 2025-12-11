@@ -72,8 +72,6 @@ def test_create_workout(client):
     assert data["start_time"] == "2025-12-01T09:00:00"
     assert data["end_time"] == "2025-12-01T10:30:00"
     assert "id" in data
-    assert "created_at" in data
-    assert "updated_at" in data
 
 
 def test_create_workout_minimal(client):
@@ -587,8 +585,6 @@ def test_list_workouts_excludes_exercises(client, db_session, test_user):
     assert "id" in workout_data
     assert "template_id" in workout_data
     assert "date" in workout_data
-    assert "created_at" in workout_data
-    assert "updated_at" in workout_data
 
     # Verify exercises field exists but is None (not snapshotted)
     assert "exercises" in workout_data

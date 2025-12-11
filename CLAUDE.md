@@ -8,7 +8,8 @@
 If you need to ignore a lint rule, give an explanation why it's necessary.
 - Where possible, practice test driven development; i.e. write tests for features first, then make sure the tests pass once the feature is implemented.
 
-# Migrations
+# Model and schema changes
 - Any migrations added should be written to be reversible if possible.
 For example, foreign key constraints should be named so that they can be dropped.
 - When the database schema is modified, update scripts/populate_db accordingly.
+- YAGNI: If you are considering adding a field to a model that wasn't explicitly requested, ask whether it should be included instead of including it automatically.

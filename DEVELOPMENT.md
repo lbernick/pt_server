@@ -425,11 +425,11 @@ curl "http://localhost:8000/api/v1/workouts?date=2025-12-09" \
 [
   {
     "id": "uuid-123",
+    "template_id": "uuid-456",
     "date": "2025-12-09",
     "start_time": "2025-12-09T09:00:00",
     "end_time": "2025-12-09T10:30:00",
-    "created_at": "2025-12-09T08:00:00Z",
-    "updated_at": "2025-12-09T08:00:00Z"
+    "exercises": null
   }
 ]
 ```
@@ -464,11 +464,11 @@ curl -X POST http://localhost:8000/api/v1/workouts \
 ```json
 {
   "id": "uuid-123",
+  "template_id": null,
   "date": "2025-12-09",
   "start_time": "2025-12-09T09:00:00",
   "end_time": "2025-12-09T10:30:00",
-  "created_at": "2025-12-09T08:00:00Z",
-  "updated_at": "2025-12-09T08:00:00Z"
+  "exercises": null
 }
 ```
 
@@ -486,11 +486,11 @@ curl http://localhost:8000/api/v1/workouts/uuid-123 \
 ```json
 {
   "id": "uuid-123",
+  "template_id": "uuid-456",
   "date": "2025-12-09",
   "start_time": "2025-12-09T09:00:00",
   "end_time": "2025-12-09T10:30:00",
-  "created_at": "2025-12-09T08:00:00Z",
-  "updated_at": "2025-12-09T08:00:00Z"
+  "exercises": [...]
 }
 ```
 
@@ -526,11 +526,11 @@ curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123 \
 ```json
 {
   "id": "uuid-123",
+  "template_id": "uuid-456",
   "date": "2025-12-10",
   "start_time": "2025-12-10T14:00:00",
   "end_time": "2025-12-10T15:30:00",
-  "created_at": "2025-12-09T08:00:00Z",
-  "updated_at": "2025-12-10T12:00:00Z"
+  "exercises": [...]
 }
 ```
 
@@ -572,9 +572,7 @@ curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/start \
       ],
       "notes": null
     }
-  ],
-  "created_at": "2025-12-09T08:00:00Z",
-  "updated_at": "2025-12-10T14:30:00Z"
+  ]
 }
 ```
 
@@ -600,9 +598,7 @@ curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/cancel \
   "date": "2025-12-10",
   "start_time": null,
   "end_time": null,
-  "exercises": [...],
-  "created_at": "2025-12-09T08:00:00Z",
-  "updated_at": "2025-12-10T14:35:00Z"
+  "exercises": [...]
 }
 ```
 
@@ -628,9 +624,7 @@ curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/finish \
   "date": "2025-12-10",
   "start_time": "2025-12-10T14:30:00",
   "end_time": "2025-12-10T15:45:00",
-  "exercises": [...],
-  "created_at": "2025-12-09T08:00:00Z",
-  "updated_at": "2025-12-10T15:45:00Z"
+  "exercises": [...]
 }
 ```
 

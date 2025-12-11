@@ -43,8 +43,6 @@ class WorkoutSummaryResponse(BaseModel):
     date: datetime.date
     start_time: Optional[datetime.datetime]
     end_time: Optional[datetime.datetime]
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
 
     class Config:
         from_attributes = True
@@ -59,8 +57,6 @@ class WorkoutResponse(BaseModel):
     start_time: Optional[datetime.datetime]
     end_time: Optional[datetime.datetime]
     exercises: Optional[List["TrackedExercise"]]
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
 
     class Config:
         from_attributes = True
