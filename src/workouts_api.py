@@ -35,8 +35,23 @@ class WorkoutUpdateRequest(BaseModel):
     end_time: datetime.datetime | None = None
 
 
+class WorkoutSummaryResponse(BaseModel):
+    """Response model for workout list/summary (without exercises)."""
+
+    id: UUID
+    template_id: Optional[UUID]
+    date: datetime.date
+    start_time: Optional[datetime.datetime]
+    end_time: Optional[datetime.datetime]
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
 class WorkoutResponse(BaseModel):
-    """Response model for a workout."""
+    """Response model for a single workout (with exercises)."""
 
     id: UUID
     template_id: Optional[UUID]
@@ -86,16 +101,21 @@ def list_workouts(
 ) -> List[WorkoutResponse]:
     """List all workouts for the authenticated user with pagination.
 
+    When listing without a date filter, returns workout summaries without
+    exercise data to keep responses compact. When filtering by a specific date,
+    returns full workout details including exercises.
+
     Args:
         skip: Number of workouts to skip (default: 0)
         limit: Maximum number of workouts to return (default: 100)
         date: Optional date filter (YYYY-MM-DD format) to get workouts for a
-            specific day
+            specific day. When provided, includes exercise data in response.
         db: Database session
         user: Authenticated user
 
     Returns:
-        List of WorkoutResponse objects
+        List of WorkoutResponse objects. Exercises are included only when
+        date filter is applied.
     """
     query = db.query(WorkoutDB).filter(WorkoutDB.user_id == user.user_id)
 
@@ -104,6 +124,15 @@ def list_workouts(
         query = query.filter(WorkoutDB.date == date)
 
     workouts = query.offset(skip).limit(limit).all()
+
+    # When filtering by date, snapshot exercises for workouts that need it
+    if date is not None:
+        for workout in workouts:
+            if workout.template_id and workout.exercises is None:
+                from workout import snapshot_template_exercises
+
+                workout.exercises = snapshot_template_exercises(db, workout.template_id)
+        db.commit()
 
     return [WorkoutResponse.model_validate(w) for w in workouts]
 

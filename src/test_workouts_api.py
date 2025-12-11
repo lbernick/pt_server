@@ -551,3 +551,130 @@ def test_workout_customization_independent_of_template(client, db_session, test_
         db_session.query(TemplateDB).filter(TemplateDB.id == template_id).first()
     )
     assert db_template.exercises[0]["name"] == "Exercise A"
+
+
+def test_list_workouts_excludes_exercises(client, db_session, test_user):
+    """Test that list endpoint without date filter does not snapshot exercises."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test Template",
+        exercises=[{"name": "Squat", "sets": 5, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout (exercises not yet snapshotted)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # List workouts without date filter - should NOT snapshot exercises
+    response = client.get("/api/v1/workouts")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data) == 1
+    workout_data = data[0]
+
+    # Verify basic fields are present
+    assert "id" in workout_data
+    assert "template_id" in workout_data
+    assert "date" in workout_data
+    assert "created_at" in workout_data
+    assert "updated_at" in workout_data
+
+    # Verify exercises field exists but is None (not snapshotted)
+    assert "exercises" in workout_data
+    assert workout_data["exercises"] is None
+
+
+def test_list_workouts_with_date_filter_includes_exercises(
+    client, db_session, test_user
+):
+    """Test that list endpoint with date filter snapshots and includes exercises."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test Template",
+        exercises=[{"name": "Squat", "sets": 5, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout on specific date (exercises not yet snapshotted)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # List workouts WITH date filter - should snapshot and include exercises
+    response = client.get("/api/v1/workouts?date=2025-12-20")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data) == 1
+    workout_data = data[0]
+
+    # Verify basic fields are present
+    assert "id" in workout_data
+    assert "template_id" in workout_data
+    assert "date" in workout_data
+
+    # Verify exercises ARE included (and were snapshotted)
+    assert "exercises" in workout_data
+    assert workout_data["exercises"] is not None
+    assert len(workout_data["exercises"]) == 1
+    assert workout_data["exercises"][0]["name"] == "Squat"
+    assert workout_data["exercises"][0]["target_sets"] == 5
+
+
+def test_get_workout_includes_exercises(client, db_session, test_user):
+    """Test that get single workout endpoint includes exercise data."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test Template",
+        exercises=[{"name": "Deadlift", "sets": 3, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Get single workout - should include exercises
+    response = client.get(f"/api/v1/workouts/{workout_id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify basic fields are present
+    assert "id" in data
+    assert "template_id" in data
+    assert "date" in data
+
+    # Verify exercises ARE included (and snapshotted)
+    assert "exercises" in data
+    assert data["exercises"] is not None
+    assert len(data["exercises"]) == 1
+    assert data["exercises"][0]["name"] == "Deadlift"
