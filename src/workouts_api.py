@@ -242,6 +242,107 @@ def update_workout_exercises(
     return WorkoutResponse.model_validate(workout)
 
 
+@router.post("/{workout_id}/start", response_model=WorkoutResponse)
+def start_workout(
+    workout_id: UUID,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
+) -> WorkoutResponse:
+    """Start a workout by setting start_time to now.
+
+    Can only start workouts that haven't been started yet (start_time is None).
+    If the workout has a template but no exercises, this will snapshot them.
+    """
+    workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Validate: can only start if not already started
+    if workout.start_time is not None:
+        raise HTTPException(status_code=400, detail="Workout has already been started")
+
+    # Set start_time to now
+    workout.start_time = datetime.datetime.now(datetime.UTC)
+
+    # Snapshot exercises if workout has template but no exercises yet
+    if workout.template_id and workout.exercises is None:
+        from workout import snapshot_template_exercises
+
+        workout.exercises = snapshot_template_exercises(db, workout.template_id)
+
+    db.commit()
+    db.refresh(workout)
+    return WorkoutResponse.model_validate(workout)
+
+
+@router.post("/{workout_id}/cancel", response_model=WorkoutResponse)
+def cancel_workout(
+    workout_id: UUID,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
+) -> WorkoutResponse:
+    """Cancel a workout in progress by clearing start_time.
+
+    Can only cancel workouts that are in progress (start_time is set, end_time is None).
+    """
+    workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Validate: workout must be in progress
+    if workout.start_time is None:
+        raise HTTPException(status_code=400, detail="Workout has not been started")
+    if workout.end_time is not None:
+        raise HTTPException(status_code=400, detail="Workout has already been finished")
+
+    # Clear start_time
+    workout.start_time = None
+
+    db.commit()
+    db.refresh(workout)
+    return WorkoutResponse.model_validate(workout)
+
+
+@router.post("/{workout_id}/finish", response_model=WorkoutResponse)
+def finish_workout(
+    workout_id: UUID,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_or_create_user),
+) -> WorkoutResponse:
+    """Finish a workout by setting end_time to now.
+
+    Can only finish workouts that are in progress (start_time is set, end_time is None).
+    """
+    workout = (
+        db.query(WorkoutDB)
+        .filter(WorkoutDB.id == workout_id, WorkoutDB.user_id == user.user_id)
+        .first()
+    )
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Validate: workout must be in progress
+    if workout.start_time is None:
+        raise HTTPException(status_code=400, detail="Workout has not been started")
+    if workout.end_time is not None:
+        raise HTTPException(status_code=400, detail="Workout has already been finished")
+
+    # Set end_time to now
+    workout.end_time = datetime.datetime.now(datetime.UTC)
+
+    db.commit()
+    db.refresh(workout)
+    return WorkoutResponse.model_validate(workout)
+
+
 @router.delete("/{workout_id}", status_code=204)
 def delete_workout(
     workout_id: UUID,

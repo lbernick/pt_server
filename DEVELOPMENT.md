@@ -536,6 +536,106 @@ curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123 \
 
 Returns 404 if workout not found or doesn't belong to the user.
 
+### POST /api/v1/workouts/:id/start
+
+Start a workout by setting the start time to now. **Requires authentication.**
+
+Can only start workouts that haven't been started yet. If the workout has a template but no exercises, this will automatically snapshot the template exercises.
+
+**Example CURL command:**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/start \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "template_id": "uuid-456",
+  "date": "2025-12-10",
+  "start_time": "2025-12-10T14:30:00",
+  "end_time": null,
+  "exercises": [
+    {
+      "name": "Bench Press",
+      "target_sets": 4,
+      "target_rep_min": 6,
+      "target_rep_max": 8,
+      "sets": [
+        {
+          "reps": null,
+          "weight": null,
+          "completed": false,
+          "notes": null
+        }
+      ],
+      "notes": null
+    }
+  ],
+  "created_at": "2025-12-09T08:00:00Z",
+  "updated_at": "2025-12-10T14:30:00Z"
+}
+```
+
+Returns 400 if workout has already been started. Returns 404 if workout not found or doesn't belong to the user.
+
+### POST /api/v1/workouts/:id/cancel
+
+Cancel a workout in progress by clearing the start time. **Requires authentication.**
+
+Can only cancel workouts that are in progress (start_time is set, end_time is None).
+
+**Example CURL command:**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/cancel \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "template_id": "uuid-456",
+  "date": "2025-12-10",
+  "start_time": null,
+  "end_time": null,
+  "exercises": [...],
+  "created_at": "2025-12-09T08:00:00Z",
+  "updated_at": "2025-12-10T14:35:00Z"
+}
+```
+
+Returns 400 if workout has not been started or has already been finished. Returns 404 if workout not found or doesn't belong to the user.
+
+### POST /api/v1/workouts/:id/finish
+
+Finish a workout by setting the end time to now. **Requires authentication.**
+
+Can only finish workouts that are in progress (start_time is set, end_time is None).
+
+**Example CURL command:**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/finish \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response format:**
+```json
+{
+  "id": "uuid-123",
+  "template_id": "uuid-456",
+  "date": "2025-12-10",
+  "start_time": "2025-12-10T14:30:00",
+  "end_time": "2025-12-10T15:45:00",
+  "exercises": [...],
+  "created_at": "2025-12-09T08:00:00Z",
+  "updated_at": "2025-12-10T15:45:00Z"
+}
+```
+
+Returns 400 if workout has not been started or has already been finished. Returns 404 if workout not found or doesn't belong to the user.
+
 ### DELETE /api/v1/workouts/:id
 
 Delete a workout. **Requires authentication.**

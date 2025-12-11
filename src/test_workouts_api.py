@@ -678,3 +678,304 @@ def test_get_workout_includes_exercises(client, db_session, test_user):
     assert data["exercises"] is not None
     assert len(data["exercises"]) == 1
     assert data["exercises"][0]["name"] == "Deadlift"
+
+
+# ========== Start Workout Tests ==========
+
+
+def test_start_workout(client, db_session, test_user):
+    """Test starting a workout with a template."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test Template",
+        exercises=[{"name": "Bench Press", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout (not started yet)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Start the workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify start_time is set
+    assert data["start_time"] is not None
+    assert data["end_time"] is None
+
+    # Verify exercises were snapshotted
+    assert data["exercises"] is not None
+    assert len(data["exercises"]) == 1
+    assert data["exercises"][0]["name"] == "Bench Press"
+    assert data["exercises"][0]["target_sets"] == 3
+
+
+def test_start_workout_without_template(client, db_session, test_user):
+    """Test starting a workout without a template."""
+    from models import WorkoutDB
+
+    # Create workout without template
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=None,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Start the workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify start_time is set
+    assert data["start_time"] is not None
+    assert data["end_time"] is None
+    assert data["exercises"] is None
+
+
+def test_start_workout_already_started(client, db_session, test_user):
+    """Test that starting an already started workout fails."""
+    from models import WorkoutDB
+
+    # Create workout that's already started
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to start it again
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Workout has already been started"
+
+
+def test_start_workout_not_found(client):
+    """Test starting a non-existent workout."""
+    fake_id = uuid4()
+    response = client.post(f"/api/v1/workouts/{fake_id}/start")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workout not found"
+
+
+# ========== Cancel Workout Tests ==========
+
+
+def test_cancel_workout(client, db_session, test_user):
+    """Test canceling a workout in progress."""
+    from models import WorkoutDB
+
+    # Create workout in progress
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Cancel the workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/cancel")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify start_time is cleared
+    assert data["start_time"] is None
+    assert data["end_time"] is None
+
+
+def test_cancel_workout_not_started(client, db_session, test_user):
+    """Test that canceling a workout that hasn't started fails."""
+    from models import WorkoutDB
+
+    # Create workout that hasn't been started
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to cancel it
+    response = client.post(f"/api/v1/workouts/{workout_id}/cancel")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Workout has not been started"
+
+
+def test_cancel_workout_already_finished(client, db_session, test_user):
+    """Test that canceling a finished workout fails."""
+    from models import WorkoutDB
+
+    # Create finished workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+        end_time=datetime(2025, 12, 20, 10, 30, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to cancel it
+    response = client.post(f"/api/v1/workouts/{workout_id}/cancel")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Workout has already been finished"
+
+
+def test_cancel_workout_not_found(client):
+    """Test canceling a non-existent workout."""
+    fake_id = uuid4()
+    response = client.post(f"/api/v1/workouts/{fake_id}/cancel")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workout not found"
+
+
+# ========== Finish Workout Tests ==========
+
+
+def test_finish_workout(client, db_session, test_user):
+    """Test finishing a workout in progress."""
+    from models import WorkoutDB
+
+    # Create workout in progress
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Finish the workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/finish")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify end_time is set
+    assert data["start_time"] is not None
+    assert data["end_time"] is not None
+
+
+def test_finish_workout_not_started(client, db_session, test_user):
+    """Test that finishing a workout that hasn't started fails."""
+    from models import WorkoutDB
+
+    # Create workout that hasn't been started
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to finish it
+    response = client.post(f"/api/v1/workouts/{workout_id}/finish")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Workout has not been started"
+
+
+def test_finish_workout_already_finished(client, db_session, test_user):
+    """Test that finishing an already finished workout fails."""
+    from models import WorkoutDB
+
+    # Create finished workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 20),
+        start_time=datetime(2025, 12, 20, 9, 0, 0),
+        end_time=datetime(2025, 12, 20, 10, 30, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to finish it again
+    response = client.post(f"/api/v1/workouts/{workout_id}/finish")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Workout has already been finished"
+
+
+def test_finish_workout_not_found(client):
+    """Test finishing a non-existent workout."""
+    fake_id = uuid4()
+    response = client.post(f"/api/v1/workouts/{fake_id}/finish")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workout not found"
+
+
+# ========== Integration Test ==========
+
+
+def test_workout_lifecycle(client, db_session, test_user):
+    """Test complete workout lifecycle: create → start → finish."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Full Body",
+        exercises=[{"name": "Squat", "sets": 5, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout
+    response = client.post(
+        "/api/v1/workouts",
+        json={
+            "date": "2025-12-20",
+        },
+    )
+    assert response.status_code == 201
+    workout_id = response.json()["id"]
+
+    # Link workout to template manually
+    # (in real app, this happens during training plan generation)
+    workout = db_session.query(WorkoutDB).filter(WorkoutDB.id == workout_id).first()
+    workout.template_id = template.id
+    db_session.commit()
+
+    # Start workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["start_time"] is not None
+    assert data["end_time"] is None
+    assert data["exercises"] is not None
+
+    # Finish workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/finish")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["start_time"] is not None
+    assert data["end_time"] is not None
+
+    # Verify final state
+    response = client.get(f"/api/v1/workouts/{workout_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["start_time"] is not None
+    assert data["end_time"] is not None
+    assert data["exercises"] is not None
