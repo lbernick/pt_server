@@ -564,7 +564,8 @@ def start_workout(
 ) -> WorkoutResponse:
     """Start a workout by setting start_time to now.
 
-    Can only start workouts that haven't been started yet (start_time is None).
+    Can only start workouts that haven't been started yet (start_time is None)
+    and are scheduled for today.
     If the workout has a template but no exercises, this will snapshot them.
     """
     workout = (
@@ -578,6 +579,17 @@ def start_workout(
     # Validate: can only start if not already started
     if workout.start_time is not None:
         raise HTTPException(status_code=400, detail="Workout has already been started")
+
+    # Validate: can only start today's workouts
+    today = datetime.date.today()
+    if workout.date != today:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Can only start workouts scheduled for today. "
+                f"This workout is scheduled for {workout.date}"
+            ),
+        )
 
     # Set start_time to now
     workout.start_time = datetime.datetime.now(datetime.UTC)

@@ -7,6 +7,7 @@ It's also mainly geared towards strength workouts, but I'd like for it to generi
 
 ## Workflows
 - *Onboarding and plan generation*: The AI asks the user about their goals, current routine, etc until it has enough information to build a training plan. It then generates some workout templates for the user to follow, and a plan for how these templates will repeat regularly.
-- *Set and rep scheme generation* (TODO): The AI uses the training plan and workout history to generate suggested rep counts and weights for the current week's templated workouts.
-- *Workout tracking* (TODO): The user can start a workout, tick off sets and reps as they are completed, and finish the workout, saving it to their history.
+- *Set and rep scheme generation*: The AI uses the training plan and workout history to generate suggested rep counts and weights for the current week's templated workouts.
+- *Workout tracking* (In progress): The user can start a workout, tick off sets and reps as they are completed, and finish the workout, saving it to their history.
 - *Plan modification* (TODO): The user can request changes to their plan and the AI can generate updates. For example, "I'm traveling next week, can you modify next week's workouts to not use gym equipment?". The user should also be able to update templates and move workouts around on their calendar.
+- *Plan extension* (TODO): Each week, the AI should add a new week onto the plan.

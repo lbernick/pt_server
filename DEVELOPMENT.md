@@ -540,7 +540,7 @@ Returns 404 if workout not found or doesn't belong to the user.
 
 Start a workout by setting the start time to now. **Requires authentication.**
 
-Can only start workouts that haven't been started yet. If the workout has a template but no exercises, this will automatically snapshot the template exercises.
+Can only start workouts that haven't been started yet and are scheduled for today. If the workout has a template but no exercises, this will automatically snapshot the template exercises.
 
 **Example CURL command:**
 ```bash
@@ -576,7 +576,11 @@ curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/start \
 }
 ```
 
-Returns 400 if workout has already been started. Returns 404 if workout not found or doesn't belong to the user.
+Returns 400 if:
+- Workout has already been started
+- Workout is not scheduled for today (e.g., scheduled for future or past dates)
+
+Returns 404 if workout not found or doesn't belong to the user.
 
 ### POST /api/v1/workouts/:id/cancel
 

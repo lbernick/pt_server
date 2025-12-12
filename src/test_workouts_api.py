@@ -780,11 +780,12 @@ def test_start_workout(client, db_session, test_user):
     db_session.add(template)
     db_session.commit()
 
-    # Create workout (not started yet)
+    # Create workout for today (not started yet)
+    today = date.today()
     workout = WorkoutDB(
         user_id=test_user.id,
         template_id=template.id,
-        date=date(2025, 12, 20),
+        date=today,
     )
     db_session.add(workout)
     db_session.commit()
@@ -810,11 +811,12 @@ def test_start_workout_without_template(client, db_session, test_user):
     """Test starting a workout without a template."""
     from models import WorkoutDB
 
-    # Create workout without template
+    # Create workout without template for today
+    today = date.today()
     workout = WorkoutDB(
         user_id=test_user.id,
         template_id=None,
-        date=date(2025, 12, 20),
+        date=today,
     )
     db_session.add(workout)
     db_session.commit()
@@ -835,11 +837,12 @@ def test_start_workout_already_started(client, db_session, test_user):
     """Test that starting an already started workout fails."""
     from models import WorkoutDB
 
-    # Create workout that's already started
+    # Create workout that's already started for today
+    today = date.today()
     workout = WorkoutDB(
         user_id=test_user.id,
-        date=date(2025, 12, 20),
-        start_time=datetime(2025, 12, 20, 9, 0, 0),
+        date=today,
+        start_time=datetime.now(),
     )
     db_session.add(workout)
     db_session.commit()
@@ -857,6 +860,52 @@ def test_start_workout_not_found(client):
     response = client.post(f"/api/v1/workouts/{fake_id}/start")
     assert response.status_code == 404
     assert response.json()["detail"] == "Workout not found"
+
+
+def test_start_workout_not_today(client, db_session, test_user):
+    """Test that starting a workout not scheduled for today fails."""
+    from datetime import timedelta
+
+    from models import WorkoutDB
+
+    # Create workout scheduled for tomorrow
+    tomorrow = date.today() + timedelta(days=1)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=tomorrow,
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to start it
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 400
+    assert "Can only start workouts scheduled for today" in response.json()["detail"]
+    assert str(tomorrow) in response.json()["detail"]
+
+
+def test_start_workout_past_date(client, db_session, test_user):
+    """Test that starting a workout from the past fails."""
+    from datetime import timedelta
+
+    from models import WorkoutDB
+
+    # Create workout scheduled for yesterday
+    yesterday = date.today() - timedelta(days=1)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=yesterday,
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Try to start it
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 400
+    assert "Can only start workouts scheduled for today" in response.json()["detail"]
+    assert str(yesterday) in response.json()["detail"]
 
 
 # ========== Cancel Workout Tests ==========
@@ -1025,11 +1074,12 @@ def test_workout_lifecycle(client, db_session, test_user):
     db_session.add(template)
     db_session.commit()
 
-    # Create workout
+    # Create workout for today
+    today = date.today()
     response = client.post(
         "/api/v1/workouts",
         json={
-            "date": "2025-12-20",
+            "date": today.isoformat(),
         },
     )
     assert response.status_code == 201
