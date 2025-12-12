@@ -536,6 +536,220 @@ curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123 \
 
 Returns 404 if workout not found or doesn't belong to the user.
 
+### PATCH /api/v1/workouts/:id/exercises
+
+Update exercises for a workout to track performance. This endpoint supports all workout tracking flows including adding/deleting sets, recording reps and weight, and marking sets as complete. **Requires authentication.**
+
+**Requirements:**
+- Workout must exist and belong to authenticated user
+- Workout must NOT be finished (end_time must be None)
+- Works for both upcoming and in-progress workouts
+
+**Request Body:**
+The entire exercises array must be provided. This replaces all exercises for the workout.
+
+```json
+{
+  "exercises": [
+    {
+      "name": "Bench Press",
+      "target_sets": 4,
+      "target_rep_min": 6,
+      "target_rep_max": 8,
+      "sets": [
+        {
+          "reps": 8,
+          "weight": 185.0,
+          "completed": true,
+          "notes": null
+        },
+        {
+          "reps": 8,
+          "weight": 185.0,
+          "completed": true,
+          "notes": null
+        },
+        {
+          "reps": 7,
+          "weight": 185.0,
+          "completed": false,
+          "notes": null
+        },
+        {
+          "reps": 6,
+          "weight": 185.0,
+          "completed": false,
+          "notes": null
+        }
+      ],
+      "notes": "Felt strong today"
+    }
+  ]
+}
+```
+
+#### Common Tracking Flows
+
+**1. Mark a Set as Complete**
+
+During your workout, mark sets complete as you finish them:
+
+```bash
+# Get current workout state
+WORKOUT=$(curl http://localhost:8000/api/v1/workouts/uuid-123 \
+  -H "Authorization: Bearer $TOKEN")
+
+# Update to mark first set complete with actual performance
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123/exercises \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "target_sets": 4,
+        "target_rep_min": 6,
+        "target_rep_max": 8,
+        "sets": [
+          {"reps": 8, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": null, "weight": null, "completed": false, "notes": null},
+          {"reps": null, "weight": null, "completed": false, "notes": null},
+          {"reps": null, "weight": null, "completed": false, "notes": null}
+        ],
+        "notes": null
+      }
+    ]
+  }'
+```
+
+**2. Change Reps or Weight**
+
+Adjust the reps or weight you performed:
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123/exercises \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "target_sets": 4,
+        "target_rep_min": 6,
+        "target_rep_max": 8,
+        "sets": [
+          {"reps": 8, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": 7, "weight": 185.0, "completed": true, "notes": "Slightly harder"},
+          {"reps": null, "weight": null, "completed": false, "notes": null},
+          {"reps": null, "weight": null, "completed": false, "notes": null}
+        ],
+        "notes": null
+      }
+    ]
+  }'
+```
+
+**3. Add Extra Sets**
+
+Add an additional set beyond the template prescription:
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123/exercises \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "target_sets": 4,
+        "target_rep_min": 6,
+        "target_rep_max": 8,
+        "sets": [
+          {"reps": 8, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": 8, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": 7, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": 6, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": 8, "weight": 175.0, "completed": true, "notes": "Extra backoff set"}
+        ],
+        "notes": "Feeling good, added volume"
+      }
+    ]
+  }'
+```
+
+**4. Delete Sets**
+
+Remove sets you didn't complete (just exclude them from the array):
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123/exercises \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "target_sets": 4,
+        "target_rep_min": 6,
+        "target_rep_max": 8,
+        "sets": [
+          {"reps": 8, "weight": 185.0, "completed": true, "notes": null},
+          {"reps": 6, "weight": 185.0, "completed": true, "notes": "Cut workout short"}
+        ],
+        "notes": "Only did 2 sets today"
+      }
+    ]
+  }'
+```
+
+**5. Add or Remove Entire Exercises**
+
+Customize the workout by adding exercises not in the template or removing template exercises:
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123/exercises \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "target_sets": 4,
+        "target_rep_min": 6,
+        "target_rep_max": 8,
+        "sets": [
+          {"reps": 8, "weight": 185.0, "completed": true, "notes": null}
+        ],
+        "notes": null
+      },
+      {
+        "name": "Dumbbell Flyes",
+        "target_sets": 3,
+        "target_rep_min": 10,
+        "target_rep_max": 12,
+        "sets": [
+          {"reps": 12, "weight": 30.0, "completed": true, "notes": null}
+        ],
+        "notes": "Added accessory work"
+      }
+    ]
+  }'
+```
+
+**Response Format:**
+
+Same as GET /workouts/{id} - returns the full workout with updated exercises.
+
+**Error Responses:**
+- 404: Workout not found
+- 400: Cannot modify a finished workout (workout with end_time set)
+
+**Notes:**
+- This endpoint replaces the entire exercises array
+- If workout doesn't have exercises yet, it will snapshot from template first
+- Changes don't affect the original template
+- All changes are immediately persisted to the database
+
 ### POST /api/v1/workouts/:id/start
 
 Start a workout by setting the start time to now. **Requires authentication.**

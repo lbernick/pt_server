@@ -764,6 +764,898 @@ def test_get_workout_includes_exercises(client, db_session, test_user):
     assert data["exercises"][0]["name"] == "Deadlift"
 
 
+# ========== Exercise Tracking Tests ==========
+
+
+@pytest.fixture
+def workout_with_exercises(db_session, test_user):
+    """Create a workout with template and snapshotted exercises."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Push Day",
+        exercises=[
+            {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+            {"name": "Overhead Press", "sets": 3, "rep_min": 8, "rep_max": 10},
+        ],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout with snapshotted exercises
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+        exercises=[
+            {
+                "name": "Bench Press",
+                "target_sets": 4,
+                "target_rep_min": 6,
+                "target_rep_max": 8,
+                "sets": [
+                    {"reps": None, "weight": None, "completed": False, "notes": None}
+                    for _ in range(4)
+                ],
+                "notes": None,
+            },
+            {
+                "name": "Overhead Press",
+                "target_sets": 3,
+                "target_rep_min": 8,
+                "target_rep_max": 10,
+                "sets": [
+                    {"reps": None, "weight": None, "completed": False, "notes": None}
+                    for _ in range(3)
+                ],
+                "notes": None,
+            },
+        ],
+    )
+    db_session.add(workout)
+    db_session.commit()
+    db_session.refresh(workout)
+    return workout
+
+
+def test_add_sets_to_exercise(client, workout_with_exercises):
+    """Test adding additional sets to an exercise during workout."""
+    workout_id = workout_with_exercises.id
+
+    # Add 2 extra sets to Bench Press (4 → 6 sets)
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 7, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 6, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": 8,
+                            "weight": 175.0,
+                            "completed": True,
+                            "notes": "Extra set 1",
+                        },
+                        {
+                            "reps": 8,
+                            "weight": 175.0,
+                            "completed": True,
+                            "notes": "Extra set 2",
+                        },
+                    ],
+                    "notes": "Added volume",
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify 6 sets for Bench Press
+    assert len(data["exercises"][0]["sets"]) == 6
+    assert data["exercises"][0]["sets"][4]["notes"] == "Extra set 1"
+    assert data["exercises"][0]["sets"][5]["notes"] == "Extra set 2"
+
+
+def test_delete_sets_from_exercise(client, workout_with_exercises):
+    """Test removing sets from an exercise."""
+    workout_id = workout_with_exercises.id
+
+    # Delete last 2 sets from Bench Press (4 → 2 sets)
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": 6,
+                            "weight": 185.0,
+                            "completed": True,
+                            "notes": "Cut short",
+                        },
+                    ],
+                    "notes": "Only did 2 sets",
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify only 2 sets remain
+    assert len(data["exercises"][0]["sets"]) == 2
+    assert data["exercises"][0]["notes"] == "Only did 2 sets"
+
+
+def test_change_reps_on_set(client, workout_with_exercises):
+    """Test changing reps for a specific set."""
+    workout_id = workout_with_exercises.id
+
+    # Change reps on 3rd set
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": 5,
+                            "weight": 185.0,
+                            "completed": True,
+                            "notes": "Tough set",
+                        },
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify 3rd set has different reps
+    assert data["exercises"][0]["sets"][0]["reps"] == 8
+    assert data["exercises"][0]["sets"][1]["reps"] == 8
+    assert data["exercises"][0]["sets"][2]["reps"] == 5
+    assert data["exercises"][0]["sets"][2]["notes"] == "Tough set"
+    assert data["exercises"][0]["sets"][3]["reps"] == 8
+
+
+def test_change_weight_on_set(client, workout_with_exercises):
+    """Test changing weight for a specific set."""
+    workout_id = workout_with_exercises.id
+
+    # Change weight on 2nd set
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": 8,
+                            "weight": 190.0,
+                            "completed": True,
+                            "notes": "Bumped up",
+                        },
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify 2nd set has different weight
+    assert data["exercises"][0]["sets"][0]["weight"] == 185.0
+    assert data["exercises"][0]["sets"][1]["weight"] == 190.0
+    assert data["exercises"][0]["sets"][1]["notes"] == "Bumped up"
+    assert data["exercises"][0]["sets"][2]["weight"] == 185.0
+    assert data["exercises"][0]["sets"][3]["weight"] == 185.0
+
+
+def test_mark_set_complete(client, workout_with_exercises):
+    """Test marking a set as completed during workout."""
+    workout_id = workout_with_exercises.id
+
+    # Mark first set complete with performance data
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify first set is complete
+    assert data["exercises"][0]["sets"][0]["completed"] is True
+    assert data["exercises"][0]["sets"][0]["reps"] == 8
+    assert data["exercises"][0]["sets"][0]["weight"] == 185.0
+
+    # Verify other sets still incomplete
+    assert data["exercises"][0]["sets"][1]["completed"] is False
+    assert data["exercises"][0]["sets"][2]["completed"] is False
+    assert data["exercises"][0]["sets"][3]["completed"] is False
+
+
+def test_mark_set_incomplete(client, db_session, test_user):
+    """Test unmarking a set (completed=false)."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create workout with some completed sets
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test",
+        exercises=[{"name": "Squat", "sets": 3, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+        exercises=[
+            {
+                "name": "Squat",
+                "target_sets": 3,
+                "target_rep_min": 5,
+                "target_rep_max": 5,
+                "sets": [
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                ],
+                "notes": None,
+            }
+        ],
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # Unmark 2nd set as incomplete
+    response = client.patch(
+        f"/api/v1/workouts/{workout.id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Squat",
+                    "target_sets": 3,
+                    "target_rep_min": 5,
+                    "target_rep_max": 5,
+                    "sets": [
+                        {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                        {
+                            "reps": 5,
+                            "weight": 225.0,
+                            "completed": False,
+                            "notes": "Redo",
+                        },
+                        {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                    ],
+                    "notes": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify 2nd set is incomplete
+    assert data["exercises"][0]["sets"][0]["completed"] is True
+    assert data["exercises"][0]["sets"][1]["completed"] is False
+    assert data["exercises"][0]["sets"][1]["notes"] == "Redo"
+    assert data["exercises"][0]["sets"][2]["completed"] is True
+
+
+def test_complete_tracking_flow(client, db_session, test_user):
+    """Test realistic workout tracking: start, update sets progressively, finish."""
+    from models import TemplateDB, WorkoutDB
+
+    # Create template and workout
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Upper",
+        exercises=[{"name": "Bench Press", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Start workout
+    response = client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert response.status_code == 200
+
+    # Mark set 1 complete
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {"reps": 10, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                    ],
+                    "notes": None,
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+
+    # Mark set 2 complete with different reps
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {"reps": 10, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 9, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                    ],
+                    "notes": None,
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+
+    # Add extra set and mark complete
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {"reps": 10, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 9, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": 10,
+                            "weight": 175.0,
+                            "completed": True,
+                            "notes": "Backoff set",
+                        },
+                    ],
+                    "notes": "Felt strong",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify all changes persisted
+    assert len(data["exercises"][0]["sets"]) == 4
+    assert data["exercises"][0]["sets"][0]["reps"] == 10
+    assert data["exercises"][0]["sets"][1]["reps"] == 9
+    assert data["exercises"][0]["sets"][2]["reps"] == 8
+    assert data["exercises"][0]["sets"][3]["reps"] == 10
+    assert data["exercises"][0]["sets"][3]["weight"] == 175.0
+    assert data["exercises"][0]["notes"] == "Felt strong"
+
+
+def test_update_multiple_exercises(client, workout_with_exercises):
+    """Test updating sets across multiple exercises in one request."""
+    workout_id = workout_with_exercises.id
+
+    # Update both exercises simultaneously
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 7, "weight": 185.0, "completed": True, "notes": None},
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                    ],
+                    "notes": "2 sets done",
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {"reps": 10, "weight": 95.0, "completed": True, "notes": None},
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        },
+                    ],
+                    "notes": "Started OHP",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify both exercises updated
+    assert data["exercises"][0]["notes"] == "2 sets done"
+    assert data["exercises"][0]["sets"][0]["completed"] is True
+    assert data["exercises"][0]["sets"][1]["completed"] is True
+
+    assert data["exercises"][1]["notes"] == "Started OHP"
+    assert data["exercises"][1]["sets"][0]["completed"] is True
+    assert data["exercises"][1]["sets"][0]["reps"] == 10
+    assert data["exercises"][1]["sets"][0]["weight"] == 95.0
+
+
+def test_remove_exercise_from_workout(client, workout_with_exercises):
+    """Test removing an entire exercise from a workout."""
+    workout_id = workout_with_exercises.id
+
+    # Remove Overhead Press, keep only Bench Press
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None}
+                        for _ in range(4)
+                    ],
+                    "notes": "Removed OHP",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify only 1 exercise remains
+    assert len(data["exercises"]) == 1
+    assert data["exercises"][0]["name"] == "Bench Press"
+
+
+def test_add_custom_exercise(client, workout_with_exercises):
+    """Test adding an exercise not in the template."""
+    workout_id = workout_with_exercises.id
+
+    # Add Dumbbell Flyes
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(4)
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Dumbbell Flyes",
+                    "target_sets": 3,
+                    "target_rep_min": 12,
+                    "target_rep_max": 15,
+                    "sets": [
+                        {"reps": 15, "weight": 30.0, "completed": True, "notes": None},
+                        {"reps": 14, "weight": 30.0, "completed": True, "notes": None},
+                        {"reps": 12, "weight": 30.0, "completed": True, "notes": None},
+                    ],
+                    "notes": "Added accessory",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify 3 exercises now
+    assert len(data["exercises"]) == 3
+    assert data["exercises"][2]["name"] == "Dumbbell Flyes"
+    assert data["exercises"][2]["notes"] == "Added accessory"
+
+
+def test_clear_set_data(client, db_session, test_user):
+    """Test setting reps/weight back to null."""
+    from models import WorkoutDB
+
+    # Create workout with completed sets
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date.today(),
+        exercises=[
+            {
+                "name": "Squat",
+                "target_sets": 3,
+                "target_rep_min": 5,
+                "target_rep_max": 5,
+                "sets": [
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                    {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                ],
+                "notes": None,
+            }
+        ],
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # Clear data on 2nd set
+    response = client.patch(
+        f"/api/v1/workouts/{workout.id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Squat",
+                    "target_sets": 3,
+                    "target_rep_min": 5,
+                    "target_rep_max": 5,
+                    "sets": [
+                        {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": "Reset",
+                        },
+                        {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                    ],
+                    "notes": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify 2nd set cleared
+    assert data["exercises"][0]["sets"][1]["reps"] is None
+    assert data["exercises"][0]["sets"][1]["weight"] is None
+    assert data["exercises"][0]["sets"][1]["completed"] is False
+
+
+def test_reorder_exercises(client, db_session, test_user):
+    """Test that exercise order is preserved."""
+    from models import WorkoutDB
+
+    # Create workout with 3 exercises in order [A, B, C]
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date.today(),
+        exercises=[
+            {
+                "name": "Exercise A",
+                "target_sets": 1,
+                "target_rep_min": 10,
+                "target_rep_max": 10,
+                "sets": [
+                    {"reps": None, "weight": None, "completed": False, "notes": None}
+                ],
+                "notes": None,
+            },
+            {
+                "name": "Exercise B",
+                "target_sets": 1,
+                "target_rep_min": 10,
+                "target_rep_max": 10,
+                "sets": [
+                    {"reps": None, "weight": None, "completed": False, "notes": None}
+                ],
+                "notes": None,
+            },
+            {
+                "name": "Exercise C",
+                "target_sets": 1,
+                "target_rep_min": 10,
+                "target_rep_max": 10,
+                "sets": [
+                    {"reps": None, "weight": None, "completed": False, "notes": None}
+                ],
+                "notes": None,
+            },
+        ],
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # Reorder to [C, A, B]
+    response = client.patch(
+        f"/api/v1/workouts/{workout.id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Exercise C",
+                    "target_sets": 1,
+                    "target_rep_min": 10,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Exercise A",
+                    "target_sets": 1,
+                    "target_rep_min": 10,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                    ],
+                    "notes": None,
+                },
+                {
+                    "name": "Exercise B",
+                    "target_sets": 1,
+                    "target_rep_min": 10,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify new order
+    assert data["exercises"][0]["name"] == "Exercise C"
+    assert data["exercises"][1]["name"] == "Exercise A"
+    assert data["exercises"][2]["name"] == "Exercise B"
+
+
 # ========== Start Workout Tests ==========
 
 
