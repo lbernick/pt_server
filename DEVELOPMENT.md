@@ -642,6 +642,174 @@ curl -X DELETE http://localhost:8000/api/v1/workouts/uuid-123 \
 
 Returns 204 No Content on success. Returns 404 if workout not found or doesn't belong to the user.
 
+### POST /api/v1/workouts/:id/suggest
+
+Get AI-powered rep and weight suggestions for a scheduled workout based on template prescription and workout history. **Requires authentication.**
+
+This endpoint analyzes the last 4 weeks of completed workouts to provide personalized suggestions for sets, reps, and weights. The suggestions are returned but **NOT** automatically applied to the workout, allowing you to review and modify them before use.
+
+**Requirements:**
+- Workout must exist and belong to the authenticated user
+- Workout must have a template (cannot suggest for workouts without templates)
+- Workout must not be completed (end_time must be None)
+
+**Request Body (all fields optional):**
+```json
+{
+  "training_phase": "hypertrophy",
+  "goal": "progressive overload",
+  "notes": "Feeling strong today"
+}
+```
+
+**Example: Get basic suggestions**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/suggest \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**Example: Get suggestions with training context**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/suggest \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "training_phase": "hypertrophy",
+    "goal": "progressive overload",
+    "notes": "Feeling strong, ready to increase weight"
+  }'
+```
+
+**Example: Get suggestions during deload week**
+```bash
+curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/suggest \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "training_phase": "deload",
+    "goal": "recovery",
+    "notes": "Feeling fatigued from last week"
+  }'
+```
+
+**Response format:**
+```json
+{
+  "exercises": [
+    {
+      "name": "Bench Press",
+      "sets": [
+        {
+          "reps": 8,
+          "weight": 185.0
+        },
+        {
+          "reps": 8,
+          "weight": 185.0
+        },
+        {
+          "reps": 7,
+          "weight": 185.0
+        },
+        {
+          "reps": 6,
+          "weight": 185.0
+        }
+      ],
+      "notes": "Strong progression trend over last 4 weeks, ready for weight increase"
+    },
+    {
+      "name": "Barbell Rows",
+      "sets": [
+        {
+          "reps": 10,
+          "weight": 135.0
+        },
+        {
+          "reps": 10,
+          "weight": 135.0
+        },
+        {
+          "reps": 9,
+          "weight": 135.0
+        },
+        {
+          "reps": 8,
+          "weight": 135.0
+        }
+      ],
+      "notes": "First time performing this exercise - focus on form"
+    }
+  ],
+  "overall_notes": "Focus on controlled tempo for hypertrophy adaptation"
+}
+```
+
+**How to apply suggestions:**
+
+The suggestions endpoint is read-only and does not modify your workout. To apply the suggestions:
+
+1. Get suggestions using this endpoint
+2. Review the AI's recommendations
+3. Modify as needed based on how you feel
+4. Apply using `PATCH /api/v1/workouts/:id/exercises`
+
+**Example workflow:**
+```bash
+# 1. Get suggestions
+SUGGESTIONS=$(curl -X POST http://localhost:8000/api/v1/workouts/uuid-123/suggest \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}')
+
+# 2. Review suggestions (JSON output)
+echo $SUGGESTIONS | jq
+
+# 3. Apply suggestions (or modified version) to workout
+curl -X PATCH http://localhost:8000/api/v1/workouts/uuid-123/exercises \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "target_sets": 4,
+        "target_rep_min": 6,
+        "target_rep_max": 8,
+        "sets": [
+          {"reps": 8, "weight": 185.0, "completed": false, "notes": null},
+          {"reps": 8, "weight": 185.0, "completed": false, "notes": null},
+          {"reps": 7, "weight": 185.0, "completed": false, "notes": null},
+          {"reps": 6, "weight": 185.0, "completed": false, "notes": null}
+        ],
+        "notes": null
+      }
+    ]
+  }'
+```
+
+**Error responses:**
+- 400: Cannot generate suggestions for completed workouts
+- 400: Cannot generate suggestions for workouts without a template
+- 404: Workout not found
+
+**How it works:**
+
+1. Queries the last 4 weeks (28 days) of completed workouts
+2. Analyzes performance trends per exercise (weights, reps, progression)
+3. Considers template prescription (target sets and rep ranges)
+4. Applies progressive overload principles
+5. Adapts to training context (if provided)
+6. Returns personalized suggestions with rationale
+
+**Training phases:**
+- `hypertrophy`: Focus on muscle growth (moderate weight, higher volume)
+- `strength`: Focus on maximal strength (heavier weight, lower reps)
+- `endurance`: Focus on muscular endurance (lighter weight, higher reps)
+- `deload`: Recovery week (reduced weight/volume)
+
 ## Code Formatting
 
 This project uses [Ruff](https://docs.astral.sh/ruff/) for code formatting and linting.

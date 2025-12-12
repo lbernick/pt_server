@@ -1063,3 +1063,479 @@ def test_workout_lifecycle(client, db_session, test_user):
     assert data["start_time"] is not None
     assert data["end_time"] is not None
     assert data["exercises"] is not None
+
+
+# ========== Workout Suggestions Tests ==========
+
+
+def test_suggest_workout_success(client, db_session, test_user):
+    """Test successful workout suggestions with history."""
+    from datetime import timedelta
+    from unittest.mock import patch
+
+    from models import TemplateDB, WorkoutDB
+    from workouts_api import WorkoutSuggestionsResponse
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Upper Body",
+        exercises=[
+            {"name": "Bench Press", "sets": 4, "rep_min": 6, "rep_max": 8},
+            {"name": "Barbell Rows", "sets": 4, "rep_min": 8, "rep_max": 10},
+        ],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create historical workouts (4 weeks back)
+    today = date.today()
+    for i in range(4):
+        workout_date = today - timedelta(days=7 * (i + 1))
+        workout = WorkoutDB(
+            user_id=test_user.id,
+            date=workout_date,
+            start_time=datetime.combine(workout_date, datetime.min.time()),
+            end_time=datetime.combine(workout_date, datetime.min.time())
+            + timedelta(hours=1),
+            exercises=[
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {
+                            "reps": 8,
+                            "weight": 175 + i * 5,
+                            "completed": True,
+                            "notes": None,
+                        }
+                        for _ in range(4)
+                    ],
+                    "notes": None,
+                }
+            ],
+        )
+        db_session.add(workout)
+    db_session.commit()
+
+    # Create today's workout (not yet started)
+    today_workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=today,
+    )
+    db_session.add(today_workout)
+    db_session.commit()
+    workout_id = today_workout.id
+
+    # Mock AI response
+    mock_response = WorkoutSuggestionsResponse(
+        exercises=[
+            {
+                "name": "Bench Press",
+                "sets": [
+                    {"reps": 8, "weight": 195.0},
+                    {"reps": 8, "weight": 195.0},
+                    {"reps": 7, "weight": 195.0},
+                    {"reps": 6, "weight": 195.0},
+                ],
+                "notes": "Strong progression trend, ready for weight increase",
+            },
+            {
+                "name": "Barbell Rows",
+                "sets": [
+                    {"reps": 10, "weight": 135.0},
+                    {"reps": 10, "weight": 135.0},
+                    {"reps": 9, "weight": 135.0},
+                    {"reps": 8, "weight": 135.0},
+                ],
+                "notes": "No previous history - start conservatively",
+            },
+        ],
+        overall_notes="Focus on controlled tempo for hypertrophy",
+    )
+
+    with patch("workouts_api.call_ai_agent", return_value=mock_response):
+        response = client.post(f"/api/v1/workouts/{workout_id}/suggest", json={})
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify response structure
+    assert "exercises" in data
+    assert "overall_notes" in data
+    assert len(data["exercises"]) == 2
+
+    # Verify Bench Press suggestions
+    bench = data["exercises"][0]
+    assert bench["name"] == "Bench Press"
+    assert len(bench["sets"]) == 4
+    assert bench["sets"][0]["weight"] == 195.0
+    assert bench["sets"][0]["reps"] == 8
+
+    # Verify workout was NOT modified
+    db_session.refresh(today_workout)
+    assert today_workout.exercises is not None  # Snapshotted but not modified
+    assert today_workout.exercises[0]["sets"][0]["weight"] is None  # Still empty
+
+
+def test_suggest_workout_no_history(client, db_session, test_user):
+    """Test workout suggestions with no historical data."""
+    from unittest.mock import patch
+
+    from models import TemplateDB, WorkoutDB
+    from workouts_api import WorkoutSuggestionsResponse
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="New Program",
+        exercises=[{"name": "Deadlift", "sets": 3, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout (no history)
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Mock AI response for new exercise
+    mock_response = WorkoutSuggestionsResponse(
+        exercises=[
+            {
+                "name": "Deadlift",
+                "sets": [
+                    {"reps": 5, "weight": 135.0},
+                    {"reps": 5, "weight": 135.0},
+                    {"reps": 5, "weight": 135.0},
+                ],
+                "notes": "First session - focus on form",
+            }
+        ],
+        overall_notes="Establish baseline performance",
+    )
+
+    with patch("workouts_api.call_ai_agent", return_value=mock_response):
+        response = client.post(f"/api/v1/workouts/{workout_id}/suggest", json={})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["exercises"]) == 1
+    assert data["exercises"][0]["name"] == "Deadlift"
+
+
+def test_suggest_workout_with_training_phase(client, db_session, test_user):
+    """Test that training context is passed to AI."""
+    from unittest.mock import patch
+
+    from models import TemplateDB, WorkoutDB
+    from workouts_api import WorkoutSuggestionsResponse
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test",
+        exercises=[{"name": "Squat", "sets": 3, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    mock_response = WorkoutSuggestionsResponse(
+        exercises=[
+            {
+                "name": "Squat",
+                "sets": [{"reps": 5, "weight": 100.0} for _ in range(3)],
+                "notes": "Deload protocol",
+            }
+        ],
+        overall_notes="Recovery week",
+    )
+
+    with patch("workouts_api.call_ai_agent", return_value=mock_response) as mock_ai:
+        response = client.post(
+            f"/api/v1/workouts/{workout.id}/suggest",
+            json={
+                "training_phase": "deload",
+                "goal": "recovery",
+                "notes": "Feeling fatigued",
+            },
+        )
+
+    assert response.status_code == 200
+    # Verify AI was called with context
+    mock_ai.assert_called_once()
+    call_args = mock_ai.call_args
+    user_prompt = call_args.kwargs["messages"][0]["content"]
+    assert "TRAINING PHASE: deload" in user_prompt
+    assert "TRAINING GOAL: recovery" in user_prompt
+    assert "ADDITIONAL NOTES: Feeling fatigued" in user_prompt
+
+
+def test_suggest_workout_not_found(client):
+    """Test 404 for non-existent workout."""
+    fake_id = uuid4()
+    response = client.post(f"/api/v1/workouts/{fake_id}/suggest", json={})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workout not found"
+
+
+def test_suggest_workout_already_completed(client, db_session, test_user):
+    """Test 400 for already completed workout."""
+    from models import WorkoutDB
+
+    # Create completed workout
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        date=date(2025, 12, 1),
+        start_time=datetime(2025, 12, 1, 9, 0, 0),
+        end_time=datetime(2025, 12, 1, 10, 30, 0),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    response = client.post(f"/api/v1/workouts/{workout.id}/suggest", json={})
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"]
+        == "Cannot generate suggestions for completed workouts"
+    )
+
+
+def test_suggest_workout_no_template(client, db_session, test_user):
+    """Test 400 for workout without template."""
+    from models import WorkoutDB
+
+    # Create workout without template
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=None,
+        date=date.today(),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    response = client.post(f"/api/v1/workouts/{workout.id}/suggest", json={})
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"]
+        == "Cannot generate suggestions for workouts without a template"
+    )
+
+
+def test_suggest_workout_snapshots_template(client, db_session, test_user):
+    """Test that suggestions endpoint snapshots template if needed."""
+    from unittest.mock import patch
+
+    from models import TemplateDB, WorkoutDB
+    from workouts_api import WorkoutSuggestionsResponse
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test",
+        exercises=[{"name": "Squat", "sets": 3, "rep_min": 5, "rep_max": 5}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout without exercises
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+        exercises=None,  # Not yet snapshotted
+    )
+    db_session.add(workout)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Verify exercises are None before call
+    assert workout.exercises is None
+
+    mock_response = WorkoutSuggestionsResponse(
+        exercises=[
+            {
+                "name": "Squat",
+                "sets": [{"reps": 5, "weight": 135.0} for _ in range(3)],
+                "notes": None,
+            }
+        ],
+        overall_notes=None,
+    )
+
+    with patch("workouts_api.call_ai_agent", return_value=mock_response):
+        response = client.post(f"/api/v1/workouts/{workout_id}/suggest", json={})
+
+    assert response.status_code == 200
+
+    # Verify exercises were snapshotted
+    db_session.refresh(workout)
+    assert workout.exercises is not None
+    assert len(workout.exercises) == 1
+    assert workout.exercises[0]["name"] == "Squat"
+
+
+def test_suggest_workout_does_not_modify(client, db_session, test_user):
+    """Test that suggestions are read-only (don't modify workout)."""
+    from unittest.mock import patch
+
+    from models import TemplateDB, WorkoutDB
+    from workouts_api import WorkoutSuggestionsResponse
+
+    # Create template
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Test",
+        exercises=[{"name": "Bench Press", "sets": 3, "rep_min": 8, "rep_max": 10}],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create workout and snapshot exercises
+    workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=date.today(),
+    )
+    db_session.add(workout)
+    db_session.commit()
+
+    # Manually snapshot to get initial state
+    from workout import snapshot_template_exercises
+
+    workout.exercises = snapshot_template_exercises(db_session, template.id)
+    db_session.commit()
+    workout_id = workout.id
+
+    # Capture original state
+    original_exercises = workout.exercises.copy()
+
+    mock_response = WorkoutSuggestionsResponse(
+        exercises=[
+            {
+                "name": "Bench Press",
+                "sets": [{"reps": 10, "weight": 185.0} for _ in range(3)],
+                "notes": "Increase weight",
+            }
+        ],
+        overall_notes="Push hard",
+    )
+
+    with patch("workouts_api.call_ai_agent", return_value=mock_response):
+        response = client.post(f"/api/v1/workouts/{workout_id}/suggest", json={})
+
+    assert response.status_code == 200
+
+    # Verify workout exercises were NOT modified
+    db_session.refresh(workout)
+    assert workout.exercises == original_exercises
+    # Sets should still be empty
+    assert workout.exercises[0]["sets"][0]["weight"] is None
+    assert workout.exercises[0]["sets"][0]["reps"] is None
+
+
+def test_suggest_workout_partial_history(client, db_session, test_user):
+    """Test suggestions with mixed exercise history."""
+    from datetime import timedelta
+    from unittest.mock import patch
+
+    from models import TemplateDB, WorkoutDB
+    from workouts_api import WorkoutSuggestionsResponse
+
+    # Create template with 2 exercises
+    template = TemplateDB(
+        user_id=test_user.id,
+        name="Mixed",
+        exercises=[
+            {"name": "Squat", "sets": 3, "rep_min": 5, "rep_max": 5},
+            {"name": "Leg Press", "sets": 3, "rep_min": 10, "rep_max": 12},
+        ],
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    # Create history with only Squat (no Leg Press history)
+    today = date.today()
+    for i in range(3):
+        workout_date = today - timedelta(days=7 * (i + 1))
+        workout = WorkoutDB(
+            user_id=test_user.id,
+            date=workout_date,
+            start_time=datetime.combine(workout_date, datetime.min.time()),
+            end_time=datetime.combine(workout_date, datetime.min.time())
+            + timedelta(hours=1),
+            exercises=[
+                {
+                    "name": "Squat",
+                    "target_sets": 3,
+                    "target_rep_min": 5,
+                    "target_rep_max": 5,
+                    "sets": [
+                        {
+                            "reps": 5,
+                            "weight": 225 + i * 10,
+                            "completed": True,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                }
+                # Note: No Leg Press in history
+            ],
+        )
+        db_session.add(workout)
+    db_session.commit()
+
+    # Create today's workout
+    today_workout = WorkoutDB(
+        user_id=test_user.id,
+        template_id=template.id,
+        date=today,
+    )
+    db_session.add(today_workout)
+    db_session.commit()
+
+    mock_response = WorkoutSuggestionsResponse(
+        exercises=[
+            {
+                "name": "Squat",
+                "sets": [{"reps": 5, "weight": 245.0} for _ in range(3)],
+                "notes": "Good progression trend",
+            },
+            {
+                "name": "Leg Press",
+                "sets": [{"reps": 12, "weight": 180.0} for _ in range(3)],
+                "notes": "New exercise - establish baseline",
+            },
+        ],
+        overall_notes="Mix of progression and baseline",
+    )
+
+    with patch("workouts_api.call_ai_agent", return_value=mock_response):
+        response = client.post(f"/api/v1/workouts/{today_workout.id}/suggest", json={})
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify both exercises have suggestions
+    assert len(data["exercises"]) == 2
+    assert data["exercises"][0]["name"] == "Squat"
+    assert data["exercises"][1]["name"] == "Leg Press"
