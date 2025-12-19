@@ -8,3 +8,4 @@ firebase-service-account.json
 .firebaserc
 firebase.json
 firebase-debug.log
+firebase-data

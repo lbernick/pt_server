@@ -101,6 +101,8 @@ firebase emulators:start --only auth
 
 The emulator UI will be available at `http://localhost:4000`.
 
+Recommended: Persist data by using the flags `--export-on-exit=./firebase-data` and `--import=./firebase-data`.
+
 #### 4. Update Your `.env` File
 
 Add this line to connect to the emulator:
@@ -1067,6 +1069,122 @@ Run tests with coverage:
 ```bash
 pytest --cov=. --cov-report=term-missing
 ```
+
+### Testing Patterns
+
+#### Testing PATCH /api/v1/workouts/{id}/exercises
+
+When testing the `PATCH /api/v1/workouts/{id}/exercises` endpoint, always verify the **complete state** of all exercises using the `assert_exercises_equal()` helper. This ensures that modifications to one exercise don't inadvertently affect others.
+
+**Why comprehensive assertions matter:**
+
+The endpoint uses a full replacement strategy (`workout.exercises = [ex.model_dump() for ex in request.exercises]`), so what you send is exactly what you get back. Testing only the first exercise or first few sets can miss bugs where:
+- Deleting sets from one exercise accidentally affects another exercise
+- Only the first set is updated instead of all sets
+- Unmodified exercises are accidentally changed
+
+**Helper Function:**
+
+Use `assert_exercises_equal()` from `test_workouts_api.py`:
+
+```python
+def assert_exercises_equal(
+    actual: list[dict],
+    expected: list[dict],
+    message: str = "Exercises do not match",
+) -> None:
+    """Assert that two exercise lists are identical using deepdiff.
+
+    Provides clear diff output when assertions fail, making it easy to identify
+    what changed unexpectedly.
+    """
+```
+
+**Example Test Pattern:**
+
+```python
+def test_update_workout_exercises(client, workout_with_exercises):
+    workout_id = workout_with_exercises.id
+
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": 7, "weight": 185.0, "completed": True, "notes": None},
+                        {"reps": None, "weight": None, "completed": False, "notes": None},
+                        {"reps": None, "weight": None, "completed": False, "notes": None},
+                    ],
+                    "notes": "2 sets done",
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {"reps": 10, "weight": 95.0, "completed": True, "notes": None},
+                        {"reps": None, "weight": None, "completed": False, "notes": None},
+                        {"reps": None, "weight": None, "completed": False, "notes": None},
+                    ],
+                    "notes": "Started OHP",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Build COMPLETE expected structure with ALL exercises and ALL sets
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 7, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": "2 sets done",
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": 10, "weight": 95.0, "completed": True, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": "Started OHP",
+        },
+    ]
+
+    # Use helper to validate complete exercise state
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after update should match expected",
+    )
+```
+
+**Benefits:**
+
+1. **Catch Hidden Bugs**: Verify all exercises/sets, not just first ones
+2. **Better Debug Experience**: DeepDiff provides clear, readable diffs when tests fail
+3. **Regression Protection**: Comprehensive assertions prevent future bugs
+4. **Documentation**: Tests serve as complete examples of expected API behavior
 
 ## Database Management
 

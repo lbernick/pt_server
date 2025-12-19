@@ -4,12 +4,35 @@ from datetime import date, datetime
 from uuid import uuid4
 
 import pytest
+from deepdiff import DeepDiff
 from fastapi.testclient import TestClient
 
 from auth import get_or_create_user
 from database import get_db
 from main import app
 from models import WorkoutDB
+
+
+def assert_exercises_equal(
+    actual: list[dict],
+    expected: list[dict],
+    message: str = "Exercises do not match",
+) -> None:
+    """Assert that two exercise lists are identical using deepdiff.
+
+    Provides clear diff output when assertions fail, making it easy to identify
+    what changed unexpectedly.
+
+    Args:
+        actual: The actual exercises from API response
+        expected: The expected exercises structure
+        message: Custom message to show on assertion failure
+
+    Raises:
+        AssertionError: If exercises differ, with detailed diff output
+    """
+    diff = DeepDiff(expected, actual, ignore_order=False)
+    assert not diff, f"{message}\n\nDifferences found:\n{diff.pretty()}"
 
 
 @pytest.fixture
@@ -877,10 +900,42 @@ def test_add_sets_to_exercise(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify 6 sets for Bench Press
-    assert len(data["exercises"][0]["sets"]) == 6
-    assert data["exercises"][0]["sets"][4]["notes"] == "Extra set 1"
-    assert data["exercises"][0]["sets"][5]["notes"] == "Extra set 2"
+    # Verify complete state of both exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 7, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 6, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 175.0, "completed": True, "notes": "Extra set 1"},
+                {"reps": 8, "weight": 175.0, "completed": True, "notes": "Extra set 2"},
+            ],
+            "notes": "Added volume",
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after adding sets should match expected",
+    )
 
 
 def test_delete_sets_from_exercise(client, workout_with_exercises):
@@ -931,9 +986,119 @@ def test_delete_sets_from_exercise(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify only 2 sets remain
-    assert len(data["exercises"][0]["sets"]) == 2
-    assert data["exercises"][0]["notes"] == "Only did 2 sets"
+    # Verify complete state of both exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 6, "weight": 185.0, "completed": True, "notes": "Cut short"},
+            ],
+            "notes": "Only did 2 sets",
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after deleting sets should match expected",
+    )
+
+
+def test_delete_sets_preserves_other_exercises(client, workout_with_exercises):
+    """
+    Regression test: Verify that deleting sets from one exercise
+    doesn't accidentally modify other exercises.
+
+    This test explicitly validates the bug scenario where deleting sets
+    from the first exercise might inadvertently affect the second exercise.
+    """
+    workout_id = workout_with_exercises.id
+
+    # Delete all but one set from Bench Press, leave Overhead Press untouched
+    response = client.patch(
+        f"/api/v1/workouts/{workout_id}/exercises",
+        json={
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "target_sets": 4,
+                    "target_rep_min": 6,
+                    "target_rep_max": 8,
+                    "sets": [
+                        {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                    ],
+                    "notes": "Reduced to 1 set",
+                },
+                {
+                    "name": "Overhead Press",
+                    "target_sets": 3,
+                    "target_rep_min": 8,
+                    "target_rep_max": 10,
+                    "sets": [
+                        {
+                            "reps": None,
+                            "weight": None,
+                            "completed": False,
+                            "notes": None,
+                        }
+                        for _ in range(3)
+                    ],
+                    "notes": None,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify first exercise has only 1 set AND second exercise still has all 3 sets
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+            ],
+            "notes": "Reduced to 1 set",
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Deleting sets from first exercise should not affect second exercise",
+    )
 
 
 def test_change_reps_on_set(client, workout_with_exercises):
@@ -986,12 +1151,40 @@ def test_change_reps_on_set(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify 3rd set has different reps
-    assert data["exercises"][0]["sets"][0]["reps"] == 8
-    assert data["exercises"][0]["sets"][1]["reps"] == 8
-    assert data["exercises"][0]["sets"][2]["reps"] == 5
-    assert data["exercises"][0]["sets"][2]["notes"] == "Tough set"
-    assert data["exercises"][0]["sets"][3]["reps"] == 8
+    # Verify complete state of both exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 5, "weight": 185.0, "completed": True, "notes": "Tough set"},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after changing reps on set should match expected",
+    )
 
 
 def test_change_weight_on_set(client, workout_with_exercises):
@@ -1044,12 +1237,40 @@ def test_change_weight_on_set(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify 2nd set has different weight
-    assert data["exercises"][0]["sets"][0]["weight"] == 185.0
-    assert data["exercises"][0]["sets"][1]["weight"] == 190.0
-    assert data["exercises"][0]["sets"][1]["notes"] == "Bumped up"
-    assert data["exercises"][0]["sets"][2]["weight"] == 185.0
-    assert data["exercises"][0]["sets"][3]["weight"] == 185.0
+    # Verify complete state of both exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 190.0, "completed": True, "notes": "Bumped up"},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after changing weight on set should match expected",
+    )
 
 
 def test_mark_set_complete(client, workout_with_exercises):
@@ -1112,15 +1333,40 @@ def test_mark_set_complete(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify first set is complete
-    assert data["exercises"][0]["sets"][0]["completed"] is True
-    assert data["exercises"][0]["sets"][0]["reps"] == 8
-    assert data["exercises"][0]["sets"][0]["weight"] == 185.0
+    # Verify complete state of both exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
 
-    # Verify other sets still incomplete
-    assert data["exercises"][0]["sets"][1]["completed"] is False
-    assert data["exercises"][0]["sets"][2]["completed"] is False
-    assert data["exercises"][0]["sets"][3]["completed"] is False
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after marking set complete should match expected",
+    )
 
 
 def test_mark_set_incomplete(client, db_session, test_user):
@@ -1187,11 +1433,27 @@ def test_mark_set_incomplete(client, db_session, test_user):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify 2nd set is incomplete
-    assert data["exercises"][0]["sets"][0]["completed"] is True
-    assert data["exercises"][0]["sets"][1]["completed"] is False
-    assert data["exercises"][0]["sets"][1]["notes"] == "Redo"
-    assert data["exercises"][0]["sets"][2]["completed"] is True
+    # Verify complete state of exercise
+    expected_exercises = [
+        {
+            "name": "Squat",
+            "target_sets": 3,
+            "target_rep_min": 5,
+            "target_rep_max": 5,
+            "sets": [
+                {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                {"reps": 5, "weight": 225.0, "completed": False, "notes": "Redo"},
+                {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+            ],
+            "notes": None,
+        }
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after marking set incomplete should match expected",
+    )
 
 
 def test_complete_tracking_flow(client, db_session, test_user):
@@ -1308,14 +1570,33 @@ def test_complete_tracking_flow(client, db_session, test_user):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify all changes persisted
-    assert len(data["exercises"][0]["sets"]) == 4
-    assert data["exercises"][0]["sets"][0]["reps"] == 10
-    assert data["exercises"][0]["sets"][1]["reps"] == 9
-    assert data["exercises"][0]["sets"][2]["reps"] == 8
-    assert data["exercises"][0]["sets"][3]["reps"] == 10
-    assert data["exercises"][0]["sets"][3]["weight"] == 175.0
-    assert data["exercises"][0]["notes"] == "Felt strong"
+    # Verify complete final state
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": 10, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 9, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {
+                    "reps": 10,
+                    "weight": 175.0,
+                    "completed": True,
+                    "notes": "Backoff set",
+                },
+            ],
+            "notes": "Felt strong",
+        }
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after complete tracking flow should match expected",
+    )
 
 
 def test_update_multiple_exercises(client, workout_with_exercises):
@@ -1379,15 +1660,40 @@ def test_update_multiple_exercises(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify both exercises updated
-    assert data["exercises"][0]["notes"] == "2 sets done"
-    assert data["exercises"][0]["sets"][0]["completed"] is True
-    assert data["exercises"][0]["sets"][1]["completed"] is True
+    # Verify complete state of both exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 7, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": "2 sets done",
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": 10, "weight": 95.0, "completed": True, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": "Started OHP",
+        },
+    ]
 
-    assert data["exercises"][1]["notes"] == "Started OHP"
-    assert data["exercises"][1]["sets"][0]["completed"] is True
-    assert data["exercises"][1]["sets"][0]["reps"] == 10
-    assert data["exercises"][1]["sets"][0]["weight"] == 95.0
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after updating multiple exercises should match expected",
+    )
 
 
 def test_remove_exercise_from_workout(client, workout_with_exercises):
@@ -1417,9 +1723,28 @@ def test_remove_exercise_from_workout(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify only 1 exercise remains
-    assert len(data["exercises"]) == 1
-    assert data["exercises"][0]["name"] == "Bench Press"
+    # Verify complete state of remaining exercise
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+                {"reps": 8, "weight": 185.0, "completed": True, "notes": None},
+            ],
+            "notes": "Removed OHP",
+        }
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after removing exercise should match expected",
+    )
 
 
 def test_add_custom_exercise(client, workout_with_exercises):
@@ -1482,10 +1807,52 @@ def test_add_custom_exercise(client, workout_with_exercises):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify 3 exercises now
-    assert len(data["exercises"]) == 3
-    assert data["exercises"][2]["name"] == "Dumbbell Flyes"
-    assert data["exercises"][2]["notes"] == "Added accessory"
+    # Verify complete state of all 3 exercises
+    expected_exercises = [
+        {
+            "name": "Bench Press",
+            "target_sets": 4,
+            "target_rep_min": 6,
+            "target_rep_max": 8,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Overhead Press",
+            "target_sets": 3,
+            "target_rep_min": 8,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Dumbbell Flyes",
+            "target_sets": 3,
+            "target_rep_min": 12,
+            "target_rep_max": 15,
+            "sets": [
+                {"reps": 15, "weight": 30.0, "completed": True, "notes": None},
+                {"reps": 14, "weight": 30.0, "completed": True, "notes": None},
+                {"reps": 12, "weight": 30.0, "completed": True, "notes": None},
+            ],
+            "notes": "Added accessory",
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after adding custom exercise should match expected",
+    )
 
 
 def test_clear_set_data(client, db_session, test_user):
@@ -1543,10 +1910,27 @@ def test_clear_set_data(client, db_session, test_user):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify 2nd set cleared
-    assert data["exercises"][0]["sets"][1]["reps"] is None
-    assert data["exercises"][0]["sets"][1]["weight"] is None
-    assert data["exercises"][0]["sets"][1]["completed"] is False
+    # Verify complete state of exercise
+    expected_exercises = [
+        {
+            "name": "Squat",
+            "target_sets": 3,
+            "target_rep_min": 5,
+            "target_rep_max": 5,
+            "sets": [
+                {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+                {"reps": None, "weight": None, "completed": False, "notes": "Reset"},
+                {"reps": 5, "weight": 225.0, "completed": True, "notes": None},
+            ],
+            "notes": None,
+        }
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after clearing set data should match expected",
+    )
 
 
 def test_reorder_exercises(client, db_session, test_user):
@@ -1650,10 +2034,45 @@ def test_reorder_exercises(client, db_session, test_user):
     assert response.status_code == 200
     data = response.json()
 
-    # Verify new order
-    assert data["exercises"][0]["name"] == "Exercise C"
-    assert data["exercises"][1]["name"] == "Exercise A"
-    assert data["exercises"][2]["name"] == "Exercise B"
+    # Verify complete state with new order
+    expected_exercises = [
+        {
+            "name": "Exercise C",
+            "target_sets": 1,
+            "target_rep_min": 10,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Exercise A",
+            "target_sets": 1,
+            "target_rep_min": 10,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+        {
+            "name": "Exercise B",
+            "target_sets": 1,
+            "target_rep_min": 10,
+            "target_rep_max": 10,
+            "sets": [
+                {"reps": None, "weight": None, "completed": False, "notes": None},
+            ],
+            "notes": None,
+        },
+    ]
+
+    assert_exercises_equal(
+        data["exercises"],
+        expected_exercises,
+        "Exercise state after reordering should match expected",
+    )
 
 
 # ========== Start Workout Tests ==========

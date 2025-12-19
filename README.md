@@ -14,6 +14,7 @@ It's also mainly geared towards strength workouts, but I'd like for it to generi
 
 ## Future features
 - Training blocks (e.g. deload weeks)
+- Support for non-strength workouts, especially running and mobility
 - Rest timers
 - Workout or exercise notes
 - Warm-ups/cool-downs
@@ -21,3 +22,6 @@ It's also mainly geared towards strength workouts, but I'd like for it to generi
 - Editing templates
 - Plate calculators
 - Optional exercises
+
+## Open questions
+- I would like to store exercises themselves in the database in order to easily show history per exercise. What's a good way to get the AI to use only exercises from the list? Will response quality suffer if there are a large number of possible exercises?
